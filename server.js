@@ -9,43 +9,19 @@ app.use(express.json());
 const META_ACCESS_TOKEN = process.env.META_ACCESS_TOKEN;
 const META_AD_ACCOUNT_ID = process.env.META_AD_ACCOUNT_ID;
 
-const getAccountId = () => {
-  const id = META_AD_ACCOUNT_ID || '';
-  return id.replace('act_', '');
-};
+const getAccountId = () => (META_AD_ACCOUNT_ID || '').replace('act_', '');
 
-// Health check
 app.get('/ping', (req, res) => res.send('OK'));
 
-// GET all campaigns with optional status filter
+// Campaigns — no date filter needed
 app.get('/api/campaigns', async (req, res) => {
   try {
-    const accountId = getAccountId();
-    const { status, limit = 100 } = req.query;
-    const params = {
-      access_token: META_ACCESS_TOKEN,
-      fields: 'id,name,status,daily_budget,lifetime_budget,objective,start_time,stop_time,created_time,updated_time,budget_remaining',
-      limit,
-    };
-    if (status) params.effective_status = `["${status}"]`;
-    const url = `https://graph.facebook.com/v19.0/act_${accountId}/campaigns`;
-    const response = await axios.get(url, { params });
-    res.json(response.data);
-  } catch (error) {
-    console.error('Campaigns error:', error.response?.data || error.message);
-    res.status(500).json({ error: error.response?.data?.error?.message || error.message });
-  }
-});
-
-// GET single campaign details
-app.get('/api/campaigns/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const url = `https://graph.facebook.com/v19.0/${id}`;
+    const url = `https://graph.facebook.com/v19.0/act_${getAccountId()}/campaigns`;
     const response = await axios.get(url, {
       params: {
         access_token: META_ACCESS_TOKEN,
-        fields: 'id,name,status,daily_budget,lifetime_budget,objective,start_time,stop_time,created_time,updated_time,budget_remaining,buying_type,bid_strategy'
+        fields: 'id,name,status,daily_budget,lifetime_budget,objective,start_time,stop_time,created_time,updated_time,budget_remaining,buying_type',
+        limit: 100,
       }
     });
     res.json(response.data);
@@ -54,50 +30,31 @@ app.get('/api/campaigns/:id', async (req, res) => {
   }
 });
 
-// GET campaign-level insights with date range
-app.get('/api/campaigns/:id/insights', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { date_preset, date_since, date_until, time_increment } = req.query;
-    const url = `https://graph.facebook.com/v19.0/${id}/insights`;
-    const params = {
-      access_token: META_ACCESS_TOKEN,
-      fields: 'campaign_name,spend,impressions,clicks,ctr,cpc,cpm,reach,frequency,actions,cost_per_action_type,outbound_clicks,outbound_clicks_ctr,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p100_watched_actions',
-      level: 'campaign',
-    };
-    if (date_preset) params.date_preset = date_preset;
-    else if (date_since && date_until) {
-      params.time_range = JSON.stringify({ since: date_since, until: date_until });
-    } else {
-      params.date_preset = 'last_30d';
-    }
-    if (time_increment) params.time_increment = time_increment;
-    const response = await axios.get(url, { params });
-    res.json(response.data);
-  } catch (error) {
-    res.status(500).json({ error: error.response?.data?.error?.message || error.message });
-  }
-});
-
-// GET account-level insights with date range
+// Account insights — WITH date range
 app.get('/api/insights', async (req, res) => {
   try {
-    const accountId = getAccountId();
     const { date_preset, date_since, date_until } = req.query;
-    const url = `https://graph.facebook.com/v19.0/act_${accountId}/insights`;
+    console.log('INSIGHTS REQUEST — date_preset:', date_preset, '| date_since:', date_since, '| date_until:', date_until);
+
     const params = {
       access_token: META_ACCESS_TOKEN,
       fields: 'campaign_id,campaign_name,spend,impressions,clicks,ctr,cpc,cpm,reach,frequency,actions,cost_per_action_type,outbound_clicks,outbound_clicks_ctr',
       level: 'campaign',
       limit: 100,
     };
-    if (date_preset) params.date_preset = date_preset;
-    else if (date_since && date_until) {
+
+    if (date_since && date_until) {
       params.time_range = JSON.stringify({ since: date_since, until: date_until });
+      console.log('Using custom time_range:', params.time_range);
+    } else if (date_preset && date_preset !== 'custom') {
+      params.date_preset = date_preset;
+      console.log('Using date_preset:', date_preset);
     } else {
       params.date_preset = 'last_30d';
+      console.log('Fallback to last_30d');
     }
-    const response = await axios.get(url, { params });
+
+    const response = await axios.get(`https://graph.facebook.com/v19.0/act_${getAccountId()}/insights`, { params });
     res.json(response.data);
   } catch (error) {
     console.error('Insights error:', error.response?.data || error.message);
@@ -105,79 +62,59 @@ app.get('/api/insights', async (req, res) => {
   }
 });
 
-// GET ad sets for a campaign
-app.get('/api/campaigns/:id/adsets', async (req, res) => {
+// Single campaign insights — WITH date range
+app.get('/api/campaigns/:id/insights', async (req, res) => {
   try {
     const { id } = req.params;
     const { date_preset, date_since, date_until } = req.query;
-    const url = `https://graph.facebook.com/v19.0/${id}/adsets`;
     const params = {
       access_token: META_ACCESS_TOKEN,
-      fields: 'id,name,status,daily_budget,lifetime_budget,targeting,billing_event,optimization_goal,bid_amount,start_time,end_time',
-      limit: 50,
+      fields: 'campaign_name,spend,impressions,clicks,ctr,cpc,cpm,reach,frequency,actions,cost_per_action_type,outbound_clicks',
+      level: 'campaign',
     };
-    const response = await axios.get(url, { params });
-
-    // Also get adset insights
-    const adsetIds = response.data.data?.map(a => a.id) || [];
-    let insightsData = [];
-    if (adsetIds.length > 0) {
-      const insightParams = {
-        access_token: META_ACCESS_TOKEN,
-        fields: 'adset_id,adset_name,spend,impressions,clicks,ctr,cpc,cpm,reach,frequency',
-        level: 'adset',
-        limit: 50,
-      };
-      if (date_preset) insightParams.date_preset = date_preset;
-      else if (date_since && date_until) insightParams.time_range = JSON.stringify({ since: date_since, until: date_until });
-      else insightParams.date_preset = 'last_30d';
-
-      try {
-        const insRes = await axios.get(`https://graph.facebook.com/v19.0/${id}/insights`, { params: insightParams });
-        insightsData = insRes.data.data || [];
-      } catch(e) { console.log('Adset insights error:', e.message); }
-    }
-
-    res.json({ adsets: response.data.data || [], insights: insightsData });
-  } catch (error) {
-    res.status(500).json({ error: error.response?.data?.error?.message || error.message });
-  }
-});
-
-// GET ads for a campaign
-app.get('/api/campaigns/:id/ads', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const url = `https://graph.facebook.com/v19.0/${id}/ads`;
-    const params = {
-      access_token: META_ACCESS_TOKEN,
-      fields: 'id,name,status,creative{id,name,title,body,image_url,thumbnail_url},adset_id',
-      limit: 50,
-    };
-    const response = await axios.get(url, { params });
+    if (date_since && date_until) params.time_range = JSON.stringify({ since: date_since, until: date_until });
+    else if (date_preset && date_preset !== 'custom') params.date_preset = date_preset;
+    else params.date_preset = 'last_30d';
+    const response = await axios.get(`https://graph.facebook.com/v19.0/${id}/insights`, { params });
     res.json(response.data);
   } catch (error) {
     res.status(500).json({ error: error.response?.data?.error?.message || error.message });
   }
 });
 
-// GET daily breakdown for a campaign
+// Daily breakdown — WITH date range
 app.get('/api/campaigns/:id/daily', async (req, res) => {
   try {
     const { id } = req.params;
     const { date_preset, date_since, date_until } = req.query;
-    const url = `https://graph.facebook.com/v19.0/${id}/insights`;
     const params = {
       access_token: META_ACCESS_TOKEN,
       fields: 'spend,impressions,clicks,ctr,cpc,cpm,reach,frequency',
       time_increment: 1,
       limit: 90,
     };
-    if (date_preset) params.date_preset = date_preset;
-    else if (date_since && date_until) params.time_range = JSON.stringify({ since: date_since, until: date_until });
+    if (date_since && date_until) params.time_range = JSON.stringify({ since: date_since, until: date_until });
+    else if (date_preset && date_preset !== 'custom') params.date_preset = date_preset;
     else params.date_preset = 'last_30d';
-    const response = await axios.get(url, { params });
+    const response = await axios.get(`https://graph.facebook.com/v19.0/${id}/insights`, { params });
     res.json(response.data);
+  } catch (error) {
+    res.status(500).json({ error: error.response?.data?.error?.message || error.message });
+  }
+});
+
+// Ad sets for a campaign
+app.get('/api/campaigns/:id/adsets', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const response = await axios.get(`https://graph.facebook.com/v19.0/${id}/adsets`, {
+      params: {
+        access_token: META_ACCESS_TOKEN,
+        fields: 'id,name,status,daily_budget,lifetime_budget,targeting,billing_event,optimization_goal,bid_amount,start_time,end_time',
+        limit: 50,
+      }
+    });
+    res.json({ adsets: response.data.data || [], insights: [] });
   } catch (error) {
     res.status(500).json({ error: error.response?.data?.error?.message || error.message });
   }
