@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect } from "react";
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 
 const API_URL = "https://reprise-ads.onrender.com";
@@ -8,33 +8,64 @@ const J = {
   border:"#00D4FF18",borderBright:"#00D4FF55",text:"#E0F4FF",muted:"#3A7A94",grid:"#00D4FF06",
 };
 const SYSTEM_PROMPT=`You are JARVIS — Reprise's elite paid growth AI for an Indian D2C clothing brand. Respond: 🔍 DIAGNOSIS → ⚡ THREAT → 🎯 ACTION → 🧪 EXPERIMENT → 📊 MONITOR → 💰 COMMAND. Sharp, decisive, occasional dry wit.`;
-const DATE_PRESETS=[{label:"TODAY",value:"today"},{label:"7 DAYS",value:"last_7d"},{label:"14 DAYS",value:"last_14d"},{label:"30 DAYS",value:"last_30d"},{label:"60 DAYS",value:"last_60d"},{label:"90 DAYS",value:"last_90d"},{label:"CUSTOM",value:"custom"}];
+const DATE_PRESETS=[
+  {label:"TODAY",value:"today"},
+  {label:"7 DAYS",value:"last_7d"},
+  {label:"14 DAYS",value:"last_14d"},
+  {label:"30 DAYS",value:"last_30d"},
+  {label:"60 DAYS",value:"last_60d"},
+  {label:"90 DAYS",value:"last_90d"},
+  {label:"CUSTOM",value:"custom"},
+];
 const fmt=n=>n>=100000?`₹${(n/100000).toFixed(1)}L`:n>=1000?`₹${(n/1000).toFixed(1)}K`:`₹${Math.round(n||0)}`;
 const fmtN=n=>n>=1000000?`${(n/1000000).toFixed(1)}M`:n>=1000?`${(n/1000).toFixed(1)}K`:`${n||0}`;
 const fmtDate=d=>d?new Date(d).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}):'—';
 
-const RepriseLogo=({size=48})=>(
-  <svg width={size} height={size*.9} viewBox="0 0 220 200" fill="none" style={{filter:"drop-shadow(0 0 8px #00D4FF) drop-shadow(0 0 20px #00D4FF44)"}}>
-    <path d="M15 8 L85 8 L105 42 L85 76 L62 76 L78 48 L68 24 L28 24 L15 8Z" fill="#00D4FF" opacity=".95"/>
-    <path d="M205 8 L135 8 L115 42 L135 76 L158 76 L142 48 L152 24 L192 24 L205 8Z" fill="#00D4FF" opacity=".95"/>
-    <path d="M110 52 L115 67 L131 67 L119 76 L124 91 L110 82 L96 91 L101 76 L89 67 L105 67Z" fill="#00D4FF"/>
-    <rect x="0" y="105" width="220" height="2" fill="#00D4FF" opacity=".3"/>
-    <text x="110" y="142" textAnchor="middle" fontFamily="'Orbitron',monospace" fontSize="36" fontWeight="900" fill="#00D4FF" letterSpacing="10">REPRISE</text>
-    <text x="110" y="162" textAnchor="middle" fontFamily="monospace" fontSize="11" fill="#00D4FF66" letterSpacing="8">ADS COMMAND</text>
-  </svg>
+// BUILD DATE PARAMS — takes values directly, no state dependency
+const buildParams=(preset,since,until)=>{
+  if(preset==="custom"&&since&&until)return`date_since=${since}&date_until=${until}`;
+  if(preset&&preset!=="custom")return`date_preset=${preset}`;
+  return"date_preset=last_30d";
+};
+
+// REPRISE LOGO — uses actual image from public folder, centered with glow
+const RepriseLogo=({size=120})=>(
+  <div style={{
+    width:size,height:size,
+    display:"flex",alignItems:"center",justifyContent:"center",
+    position:"relative",flexShrink:0,
+  }}>
+    <img
+      src="/reprise-logo.jpg"
+      alt="Reprise"
+      style={{
+        width:"100%",height:"100%",
+        objectFit:"contain",
+        filter:"brightness(0) invert(1) sepia(1) saturate(4) hue-rotate(170deg) brightness(1.2) drop-shadow(0 0 8px #00D4FF) drop-shadow(0 0 16px #00D4FF66)",
+        display:"block",
+      }}
+    />
+  </div>
 );
 
 const ArcReactor=({value,max,label,color=J.cyan,size=88})=>{
   const r=size*.36,circ=2*Math.PI*r,pct=Math.min((parseFloat(value)||0)/Math.max(parseFloat(max)||1,1)*100,100),dash=(pct/100)*circ;
-  return(<div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color+"18"} strokeWidth="3"/>
-      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth="3" strokeDasharray={`${dash} ${circ}`} strokeLinecap="round" transform={`rotate(-90 ${size/2} ${size/2})`} style={{filter:`drop-shadow(0 0 5px ${color})`}}/>
-      <circle cx={size/2} cy={size/2} r={r*.5} fill={color+"0A"} stroke={color+"33"} strokeWidth="1"/>
-      <text x={size/2} y={size/2+5} textAnchor="middle" fill={color} fontSize={size*.14} fontFamily="monospace" fontWeight="800">{typeof value==="number"&&value>9999?fmtN(value):value}</text>
-    </svg>
-    <div style={{fontSize:8,color:J.muted,letterSpacing:2,textTransform:"uppercase",fontFamily:"monospace"}}>{label}</div>
-  </div>);
+  return(
+    <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color+"18"} strokeWidth="3"/>
+        <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth="3"
+          strokeDasharray={`${dash} ${circ}`} strokeLinecap="round"
+          transform={`rotate(-90 ${size/2} ${size/2})`}
+          style={{filter:`drop-shadow(0 0 5px ${color})`}}/>
+        <circle cx={size/2} cy={size/2} r={r*.5} fill={color+"0A"} stroke={color+"33"} strokeWidth="1"/>
+        <text x={size/2} y={size/2+5} textAnchor="middle" fill={color} fontSize={size*.14} fontFamily="monospace" fontWeight="800">
+          {typeof value==="number"&&value>9999?fmtN(value):value}
+        </text>
+      </svg>
+      <div style={{fontSize:8,color:J.muted,letterSpacing:2,textTransform:"uppercase",fontFamily:"monospace"}}>{label}</div>
+    </div>
+  );
 };
 
 const JCard=({children,style={},glow=false,accent=J.cyan})=>(
@@ -45,33 +76,40 @@ const JCard=({children,style={},glow=false,accent=J.cyan})=>(
   </div>
 );
 
-function DateRangePicker({datePreset,setDatePreset,dateSince,setDateSince,dateUntil,setDateUntil,onApply}){
-  return(<div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-    <span style={{fontSize:8,color:J.muted,fontFamily:"monospace",letterSpacing:2}}>DATE RANGE:</span>
-    <div style={{display:"flex",gap:4}}>
-      {DATE_PRESETS.map(p=>(
-        <button key={p.value} onClick={()=>{setDatePreset(p.value);if(p.value!=="custom")onApply(p.value);}}
-          style={{padding:"4px 10px",background:datePreset===p.value?J.cyan+"22":"transparent",border:`1px solid ${datePreset===p.value?J.cyan:J.border}`,borderRadius:2,color:datePreset===p.value?J.cyan:J.muted,fontSize:9,cursor:"pointer",fontFamily:"monospace",letterSpacing:1,boxShadow:datePreset===p.value?J.cyanGlowSm:"none",transition:"all .2s"}}>
-          {p.label}
-        </button>
-      ))}
-    </div>
-    {datePreset==="custom"&&(
-      <div style={{display:"flex",alignItems:"center",gap:6}}>
-        <input type="date" value={dateSince} onChange={e=>setDateSince(e.target.value)} style={{padding:"3px 8px",background:J.bg2,border:`1px solid ${J.borderBright}`,borderRadius:2,color:J.cyan,fontSize:10,fontFamily:"monospace",outline:"none",colorScheme:"dark"}}/>
-        <span style={{color:J.muted,fontSize:9}}>TO</span>
-        <input type="date" value={dateUntil} onChange={e=>setDateUntil(e.target.value)} style={{padding:"3px 8px",background:J.bg2,border:`1px solid ${J.borderBright}`,borderRadius:2,color:J.cyan,fontSize:10,fontFamily:"monospace",outline:"none",colorScheme:"dark"}}/>
-        <button onClick={()=>onApply("custom")} style={{padding:"4px 12px",background:J.cyan+"22",border:`1px solid ${J.cyan}`,borderRadius:2,color:J.cyan,fontSize:9,cursor:"pointer",fontFamily:"monospace",letterSpacing:1,boxShadow:J.cyanGlowSm}}>APPLY</button>
+function DateRangePicker({activePreset,onSelect,dateSince,setDateSince,dateUntil,setDateUntil,onCustomApply}){
+  return(
+    <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+      <span style={{fontSize:8,color:J.muted,fontFamily:"monospace",letterSpacing:2}}>DATE RANGE:</span>
+      <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+        {DATE_PRESETS.map(p=>(
+          <button key={p.value} onClick={()=>onSelect(p.value)}
+            style={{padding:"4px 10px",background:activePreset===p.value?J.cyan+"22":"transparent",border:`1px solid ${activePreset===p.value?J.cyan:J.border}`,borderRadius:2,color:activePreset===p.value?J.cyan:J.muted,fontSize:9,cursor:"pointer",fontFamily:"monospace",letterSpacing:1,boxShadow:activePreset===p.value?J.cyanGlowSm:"none",transition:"all .2s"}}>
+            {p.label}
+          </button>
+        ))}
       </div>
-    )}
-  </div>);
+      {activePreset==="custom"&&(
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          <input type="date" value={dateSince} onChange={e=>setDateSince(e.target.value)}
+            style={{padding:"3px 8px",background:J.bg2,border:`1px solid ${J.borderBright}`,borderRadius:2,color:J.cyan,fontSize:10,fontFamily:"monospace",outline:"none",colorScheme:"dark"}}/>
+          <span style={{color:J.muted,fontSize:9}}>TO</span>
+          <input type="date" value={dateUntil} onChange={e=>setDateUntil(e.target.value)}
+            style={{padding:"3px 8px",background:J.bg2,border:`1px solid ${J.borderBright}`,borderRadius:2,color:J.cyan,fontSize:10,fontFamily:"monospace",outline:"none",colorScheme:"dark"}}/>
+          <button onClick={onCustomApply}
+            style={{padding:"4px 12px",background:J.cyan+"22",border:`1px solid ${J.cyan}`,borderRadius:2,color:J.cyan,fontSize:9,cursor:"pointer",fontFamily:"monospace",letterSpacing:1,boxShadow:J.cyanGlowSm}}>
+            APPLY
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function CampaignDrawer({campaign,insights,datePreset,dateSince,dateUntil,onClose}){
-  const [sec,setSec]=useState("OVERVIEW");
-  const [adsets,setAdsets]=useState([]);
-  const [dailyData,setDailyData]=useState([]);
-  const [loading,setLoading]=useState(true);
+  const[sec,setSec]=useState("OVERVIEW");
+  const[adsets,setAdsets]=useState([]);
+  const[dailyData,setDailyData]=useState([]);
+  const[loading,setLoading]=useState(true);
   const ci=insights.find(i=>i.campaign_id===campaign.id||i.campaign_name===campaign.name)||{};
   const spend=parseFloat(ci.spend||0),impressions=parseInt(ci.impressions||0),clicks=parseInt(ci.clicks||0);
   const ctr=parseFloat(ci.ctr||0),cpc=parseFloat(ci.cpc||0),cpm=parseFloat(ci.cpm||0);
@@ -79,17 +117,22 @@ function CampaignDrawer({campaign,insights,datePreset,dateSince,dateUntil,onClos
   const purchases=(ci.actions||[]).find(a=>a.action_type==="purchase")?.value||0;
   const atc=(ci.actions||[]).find(a=>a.action_type==="add_to_cart")?.value||0;
   const vc=(ci.actions||[]).find(a=>a.action_type==="view_content")?.value||0;
-  const buildP=()=>datePreset==="custom"?`date_since=${dateSince}&date_until=${dateUntil}`:`date_preset=${datePreset}`;
+
   useEffect(()=>{
-    const fetch2=async()=>{
+    const p=buildParams(datePreset,dateSince,dateUntil);
+    const go=async()=>{
       setLoading(true);
       try{
-        const[a,d]=await Promise.all([fetch(`${API_URL}/api/campaigns/${campaign.id}/adsets?${buildP()}`),fetch(`${API_URL}/api/campaigns/${campaign.id}/daily?${buildP()}`)]);
+        const[a,d]=await Promise.all([
+          fetch(`${API_URL}/api/campaigns/${campaign.id}/adsets?${p}`),
+          fetch(`${API_URL}/api/campaigns/${campaign.id}/daily?${p}`)
+        ]);
         const ad=await a.json(),dd=await d.json();
         setAdsets(ad.adsets||[]);setDailyData(dd.data||[]);
       }catch(e){console.log(e);}finally{setLoading(false);}
-    };fetch2();
+    };go();
   },[campaign.id,datePreset,dateSince,dateUntil]);
+
   const SECS=["OVERVIEW","DAILY","AD SETS"];
   return(
     <div style={{position:"fixed",inset:0,zIndex:200,display:"flex",justifyContent:"flex-end"}}>
@@ -123,17 +166,19 @@ function CampaignDrawer({campaign,insights,datePreset,dateSince,dateUntil,onClos
                 </JCard>
               ))}
             </div>
-            {(purchases>0||atc>0||vc>0)&&<JCard style={{padding:16,marginBottom:16}} glow>
-              <div style={{fontSize:9,color:J.cyan,letterSpacing:2,fontFamily:"monospace",marginBottom:12,textShadow:J.cyanGlowSm}}>◈ CONVERSION EVENTS</div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
-                {[["PURCHASES",purchases,J.green],["ADD TO CART",atc,J.yellow],["VIEW CONTENT",vc,J.cyan]].map(([l,v,c])=>(
-                  <div key={l} style={{textAlign:"center",padding:"10px",background:c+"0A",border:`1px solid ${c}22`,borderRadius:2}}>
-                    <div style={{fontSize:22,fontWeight:900,color:c,fontFamily:"monospace",textShadow:`0 0 10px ${c}66`}}>{v}</div>
-                    <div style={{fontSize:8,color:J.muted,letterSpacing:1.5,marginTop:4}}>{l}</div>
-                  </div>
-                ))}
-              </div>
-            </JCard>}
+            {(parseInt(purchases)>0||parseInt(atc)>0||parseInt(vc)>0)&&(
+              <JCard style={{padding:16,marginBottom:16}} glow>
+                <div style={{fontSize:9,color:J.cyan,letterSpacing:2,fontFamily:"monospace",marginBottom:12,textShadow:J.cyanGlowSm}}>◈ CONVERSION EVENTS</div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
+                  {[["PURCHASES",purchases,J.green],["ADD TO CART",atc,J.yellow],["VIEW CONTENT",vc,J.cyan]].map(([l,v,c])=>(
+                    <div key={l} style={{textAlign:"center",padding:"10px",background:c+"0A",border:`1px solid ${c}22`,borderRadius:2}}>
+                      <div style={{fontSize:22,fontWeight:900,color:c,fontFamily:"monospace",textShadow:`0 0 10px ${c}66`}}>{v}</div>
+                      <div style={{fontSize:8,color:J.muted,letterSpacing:1.5,marginTop:4}}>{l}</div>
+                    </div>
+                  ))}
+                </div>
+              </JCard>
+            )}
             <JCard style={{padding:16}} glow>
               <div style={{fontSize:9,color:J.cyan,letterSpacing:2,fontFamily:"monospace",marginBottom:12,textShadow:J.cyanGlowSm}}>◈ CAMPAIGN INFO</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
@@ -146,79 +191,87 @@ function CampaignDrawer({campaign,insights,datePreset,dateSince,dateUntil,onClos
               </div>
             </JCard>
           </>}
-          {sec==="DAILY"&&<JCard style={{padding:18}} glow>
-            <div style={{fontSize:9,color:J.cyan,letterSpacing:2,fontFamily:"monospace",marginBottom:16,textShadow:J.cyanGlowSm}}>◈ DAILY PERFORMANCE</div>
-            {loading?<div style={{padding:40,textAlign:"center",color:J.muted,fontFamily:"monospace",fontSize:10,letterSpacing:2}}>LOADING...</div>:
-            dailyData.length===0?<div style={{padding:40,textAlign:"center",color:J.muted,fontFamily:"monospace",fontSize:10}}>NO DAILY DATA FOR THIS PERIOD</div>:<>
-              <div style={{marginBottom:20}}>
-                <div style={{fontSize:9,color:J.muted,letterSpacing:1.5,fontFamily:"monospace",marginBottom:8}}>DAILY SPEND</div>
-                <ResponsiveContainer width="100%" height={150}>
-                  <BarChart data={dailyData.map(d=>({date:d.date_start?.slice(5),spend:parseFloat(d.spend||0)}))}>
-                    <CartesianGrid strokeDasharray="3 3" stroke={J.grid}/>
-                    <XAxis dataKey="date" tick={{fontSize:8,fill:J.muted,fontFamily:"monospace"}}/>
-                    <YAxis tick={{fontSize:8,fill:J.muted,fontFamily:"monospace"}}/>
-                    <Tooltip contentStyle={{background:J.bg2,border:`1px solid ${J.borderBright}`,borderRadius:3,fontSize:10,fontFamily:"monospace",color:J.cyan}} formatter={v=>[fmt(v),"Spend"]}/>
-                    <Bar dataKey="spend" fill={J.cyan} fillOpacity={.7} radius={[2,2,0,0]} style={{filter:`drop-shadow(0 0 4px ${J.cyan})`}}/>
-                  </BarChart>
-                </ResponsiveContainer>
+          {sec==="DAILY"&&(
+            <JCard style={{padding:18}} glow>
+              <div style={{fontSize:9,color:J.cyan,letterSpacing:2,fontFamily:"monospace",marginBottom:16,textShadow:J.cyanGlowSm}}>◈ DAILY PERFORMANCE</div>
+              {loading?<div style={{padding:40,textAlign:"center",color:J.muted,fontFamily:"monospace",fontSize:10,letterSpacing:2}}>LOADING...</div>:
+              dailyData.length===0?<div style={{padding:40,textAlign:"center",color:J.muted,fontFamily:"monospace",fontSize:10}}>NO DAILY DATA FOR THIS PERIOD</div>:<>
+                <div style={{marginBottom:20}}>
+                  <div style={{fontSize:9,color:J.muted,letterSpacing:1.5,fontFamily:"monospace",marginBottom:8}}>DAILY SPEND</div>
+                  <ResponsiveContainer width="100%" height={150}>
+                    <BarChart data={dailyData.map(d=>({date:d.date_start?.slice(5),spend:parseFloat(d.spend||0)}))}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={J.grid}/>
+                      <XAxis dataKey="date" tick={{fontSize:8,fill:J.muted,fontFamily:"monospace"}}/>
+                      <YAxis tick={{fontSize:8,fill:J.muted,fontFamily:"monospace"}}/>
+                      <Tooltip contentStyle={{background:J.bg2,border:`1px solid ${J.borderBright}`,borderRadius:3,fontSize:10,fontFamily:"monospace",color:J.cyan}} formatter={v=>[fmt(v),"Spend"]}/>
+                      <Bar dataKey="spend" fill={J.cyan} fillOpacity={.7} radius={[2,2,0,0]}/>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+                <div style={{marginBottom:20}}>
+                  <div style={{fontSize:9,color:J.muted,letterSpacing:1.5,fontFamily:"monospace",marginBottom:8}}>DAILY CTR %</div>
+                  <ResponsiveContainer width="100%" height={120}>
+                    <AreaChart data={dailyData.map(d=>({date:d.date_start?.slice(5),ctr:parseFloat(d.ctr||0)}))}>
+                      <defs><linearGradient id="ctrG" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={J.green} stopOpacity={.25}/><stop offset="95%" stopColor={J.green} stopOpacity={0}/></linearGradient></defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke={J.grid}/>
+                      <XAxis dataKey="date" tick={{fontSize:8,fill:J.muted,fontFamily:"monospace"}}/>
+                      <YAxis tick={{fontSize:8,fill:J.muted,fontFamily:"monospace"}}/>
+                      <Tooltip contentStyle={{background:J.bg2,border:`1px solid ${J.borderBright}`,borderRadius:3,fontSize:10,fontFamily:"monospace",color:J.green}} formatter={v=>[`${parseFloat(v).toFixed(2)}%`,"CTR"]}/>
+                      <Area type="monotone" dataKey="ctr" stroke={J.green} fill="url(#ctrG)" strokeWidth={2} dot={false}/>
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+                <div style={{overflowX:"auto"}}>
+                  <table style={{width:"100%",borderCollapse:"collapse"}}>
+                    <thead><tr style={{borderBottom:`1px solid ${J.border}`,background:J.cyan+"06"}}>
+                      {["DATE","SPEND","IMPR","CLICKS","CTR","CPC","CPM","FREQ"].map(h=><th key={h} style={{padding:"8px 10px",fontSize:7,color:J.muted,fontFamily:"monospace",letterSpacing:1.5,textAlign:h==="DATE"?"left":"center"}}>{h}</th>)}
+                    </tr></thead>
+                    <tbody>
+                      {dailyData.map((d,i)=>(
+                        <tr key={i} style={{borderBottom:`1px solid ${J.border}`}}>
+                          <td style={{padding:"7px 10px",fontSize:10,color:J.text,fontFamily:"monospace"}}>{d.date_start}</td>
+                          <td style={{padding:"7px 10px",textAlign:"center",fontSize:10,color:J.cyan,fontFamily:"monospace",fontWeight:700}}>{fmt(parseFloat(d.spend||0))}</td>
+                          <td style={{padding:"7px 10px",textAlign:"center",fontSize:9,color:J.muted,fontFamily:"monospace"}}>{fmtN(parseInt(d.impressions||0))}</td>
+                          <td style={{padding:"7px 10px",textAlign:"center",fontSize:9,color:J.muted,fontFamily:"monospace"}}>{fmtN(parseInt(d.clicks||0))}</td>
+                          <td style={{padding:"7px 10px",textAlign:"center",fontSize:9,fontFamily:"monospace",color:parseFloat(d.ctr||0)>=1?J.green:J.red,fontWeight:700}}>{parseFloat(d.ctr||0).toFixed(2)}%</td>
+                          <td style={{padding:"7px 10px",textAlign:"center",fontSize:9,color:J.muted,fontFamily:"monospace"}}>₹{parseFloat(d.cpc||0).toFixed(0)}</td>
+                          <td style={{padding:"7px 10px",textAlign:"center",fontSize:9,color:J.muted,fontFamily:"monospace"}}>₹{parseFloat(d.cpm||0).toFixed(0)}</td>
+                          <td style={{padding:"7px 10px",textAlign:"center",fontSize:9,fontFamily:"monospace",color:parseFloat(d.frequency||0)>4?J.red:parseFloat(d.frequency||0)>2?J.yellow:J.green}}>{parseFloat(d.frequency||0).toFixed(1)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>}
+            </JCard>
+          )}
+          {sec==="AD SETS"&&(
+            <JCard style={{padding:0,overflow:"hidden"}} glow>
+              <div style={{padding:"12px 16px",borderBottom:`1px solid ${J.border}`}}>
+                <div style={{fontSize:9,color:J.cyan,letterSpacing:2,fontFamily:"monospace",textShadow:J.cyanGlowSm}}>◈ AD SETS — {adsets.length} FOUND</div>
               </div>
-              <div style={{marginBottom:20}}>
-                <div style={{fontSize:9,color:J.muted,letterSpacing:1.5,fontFamily:"monospace",marginBottom:8}}>DAILY CTR %</div>
-                <ResponsiveContainer width="100%" height={120}>
-                  <AreaChart data={dailyData.map(d=>({date:d.date_start?.slice(5),ctr:parseFloat(d.ctr||0)}))}>
-                    <defs><linearGradient id="ctrG" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={J.green} stopOpacity={.25}/><stop offset="95%" stopColor={J.green} stopOpacity={0}/></linearGradient></defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke={J.grid}/>
-                    <XAxis dataKey="date" tick={{fontSize:8,fill:J.muted,fontFamily:"monospace"}}/>
-                    <YAxis tick={{fontSize:8,fill:J.muted,fontFamily:"monospace"}}/>
-                    <Tooltip contentStyle={{background:J.bg2,border:`1px solid ${J.borderBright}`,borderRadius:3,fontSize:10,fontFamily:"monospace",color:J.green}} formatter={v=>[`${parseFloat(v).toFixed(2)}%`,"CTR"]}/>
-                    <Area type="monotone" dataKey="ctr" stroke={J.green} fill="url(#ctrG)" strokeWidth={2} dot={false}/>
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-              <table style={{width:"100%",borderCollapse:"collapse"}}>
-                <thead><tr style={{borderBottom:`1px solid ${J.border}`,background:J.cyan+"06"}}>
-                  {["DATE","SPEND","IMPR","CLICKS","CTR","CPC","CPM","FREQ"].map(h=><th key={h} style={{padding:"8px 10px",fontSize:7,color:J.muted,fontFamily:"monospace",letterSpacing:1.5,textAlign:h==="DATE"?"left":"center"}}>{h}</th>)}
-                </tr></thead>
-                <tbody>
-                  {dailyData.map((d,i)=>(
-                    <tr key={i} style={{borderBottom:`1px solid ${J.border}`}}>
-                      <td style={{padding:"7px 10px",fontSize:10,color:J.text,fontFamily:"monospace"}}>{d.date_start}</td>
-                      <td style={{padding:"7px 10px",textAlign:"center",fontSize:10,color:J.cyan,fontFamily:"monospace",fontWeight:700}}>{fmt(parseFloat(d.spend||0))}</td>
-                      <td style={{padding:"7px 10px",textAlign:"center",fontSize:9,color:J.muted,fontFamily:"monospace"}}>{fmtN(parseInt(d.impressions||0))}</td>
-                      <td style={{padding:"7px 10px",textAlign:"center",fontSize:9,color:J.muted,fontFamily:"monospace"}}>{fmtN(parseInt(d.clicks||0))}</td>
-                      <td style={{padding:"7px 10px",textAlign:"center",fontSize:9,fontFamily:"monospace",color:parseFloat(d.ctr||0)>=1?J.green:J.red,fontWeight:700}}>{parseFloat(d.ctr||0).toFixed(2)}%</td>
-                      <td style={{padding:"7px 10px",textAlign:"center",fontSize:9,color:J.muted,fontFamily:"monospace"}}>₹{parseFloat(d.cpc||0).toFixed(0)}</td>
-                      <td style={{padding:"7px 10px",textAlign:"center",fontSize:9,color:J.muted,fontFamily:"monospace"}}>₹{parseFloat(d.cpm||0).toFixed(0)}</td>
-                      <td style={{padding:"7px 10px",textAlign:"center",fontSize:9,fontFamily:"monospace",color:parseFloat(d.frequency||0)>4?J.red:parseFloat(d.frequency||0)>2?J.yellow:J.green}}>{parseFloat(d.frequency||0).toFixed(1)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </>}
-          </JCard>}
-          {sec==="AD SETS"&&<JCard style={{padding:0,overflow:"hidden"}} glow>
-            <div style={{padding:"12px 16px",borderBottom:`1px solid ${J.border}`}}>
-              <div style={{fontSize:9,color:J.cyan,letterSpacing:2,fontFamily:"monospace",textShadow:J.cyanGlowSm}}>◈ AD SETS — {adsets.length} FOUND</div>
-            </div>
-            {loading?<div style={{padding:40,textAlign:"center",color:J.muted,fontFamily:"monospace",fontSize:10,letterSpacing:2}}>LOADING AD SETS...</div>:
-            adsets.length===0?<div style={{padding:40,textAlign:"center",color:J.muted,fontFamily:"monospace",fontSize:10}}>NO AD SETS FOUND</div>:
-            <table style={{width:"100%",borderCollapse:"collapse"}}>
-              <thead><tr style={{borderBottom:`1px solid ${J.border}`,background:J.cyan+"06"}}>
-                {["AD SET","STATUS","DAILY BUDGET","OPTIMIZATION","BILLING"].map(h=><th key={h} style={{padding:"9px 12px",fontSize:7,color:J.muted,fontFamily:"monospace",letterSpacing:1.5,textAlign:h==="AD SET"?"left":"center"}}>{h}</th>)}
-              </tr></thead>
-              <tbody>
-                {adsets.map((a,i)=>(
-                  <tr key={i} style={{borderBottom:`1px solid ${J.border}`}}>
-                    <td style={{padding:"10px 12px",fontSize:11,fontWeight:700,color:J.text,fontFamily:"monospace",maxWidth:220,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.name}</td>
-                    <td style={{padding:"10px 12px",textAlign:"center"}}><span style={{padding:"2px 7px",borderRadius:2,fontSize:8,fontFamily:"monospace",background:a.status==="ACTIVE"?J.green+"18":J.muted+"18",color:a.status==="ACTIVE"?J.green:J.muted,border:`1px solid ${a.status==="ACTIVE"?J.green+"44":J.muted+"33"}`}}>{a.status}</span></td>
-                    <td style={{padding:"10px 12px",textAlign:"center",fontSize:11,fontWeight:700,color:J.cyan,fontFamily:"monospace"}}>{a.daily_budget?fmt(parseFloat(a.daily_budget)/100):"—"}</td>
-                    <td style={{padding:"10px 12px",textAlign:"center",fontSize:9,color:J.muted,fontFamily:"monospace"}}>{a.optimization_goal?.replace(/_/g," ")||"—"}</td>
-                    <td style={{padding:"10px 12px",textAlign:"center",fontSize:9,color:J.muted,fontFamily:"monospace"}}>{a.billing_event?.replace(/_/g," ")||"—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>}
-          </JCard>}
+              {loading?<div style={{padding:40,textAlign:"center",color:J.muted,fontFamily:"monospace",fontSize:10,letterSpacing:2}}>LOADING...</div>:
+              adsets.length===0?<div style={{padding:40,textAlign:"center",color:J.muted,fontFamily:"monospace",fontSize:10}}>NO AD SETS FOUND</div>:
+              <div style={{overflowX:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse"}}>
+                  <thead><tr style={{borderBottom:`1px solid ${J.border}`,background:J.cyan+"06"}}>
+                    {["AD SET","STATUS","DAILY BUDGET","OPTIMIZATION","BILLING"].map(h=><th key={h} style={{padding:"9px 12px",fontSize:7,color:J.muted,fontFamily:"monospace",letterSpacing:1.5,textAlign:h==="AD SET"?"left":"center"}}>{h}</th>)}
+                  </tr></thead>
+                  <tbody>
+                    {adsets.map((a,i)=>(
+                      <tr key={i} style={{borderBottom:`1px solid ${J.border}`}}>
+                        <td style={{padding:"10px 12px",fontSize:11,fontWeight:700,color:J.text,fontFamily:"monospace",maxWidth:220,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.name}</td>
+                        <td style={{padding:"10px 12px",textAlign:"center"}}><span style={{padding:"2px 7px",borderRadius:2,fontSize:8,fontFamily:"monospace",background:a.status==="ACTIVE"?J.green+"18":J.muted+"18",color:a.status==="ACTIVE"?J.green:J.muted,border:`1px solid ${a.status==="ACTIVE"?J.green+"44":J.muted+"33"}`}}>{a.status}</span></td>
+                        <td style={{padding:"10px 12px",textAlign:"center",fontSize:11,fontWeight:700,color:J.cyan,fontFamily:"monospace"}}>{a.daily_budget?fmt(parseFloat(a.daily_budget)/100):"—"}</td>
+                        <td style={{padding:"10px 12px",textAlign:"center",fontSize:9,color:J.muted,fontFamily:"monospace"}}>{a.optimization_goal?.replace(/_/g," ")||"—"}</td>
+                        <td style={{padding:"10px 12px",textAlign:"center",fontSize:9,color:J.muted,fontFamily:"monospace"}}>{a.billing_event?.replace(/_/g," ")||"—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>}
+            </JCard>
+          )}
         </div>
       </div>
     </div>
@@ -233,8 +286,12 @@ function AIPanel({onClose,campaigns,insights}){
   const send=async(text)=>{
     const ctx=`\n\nREPRISE: ${campaigns.length} campaigns | ${campaigns.filter(c=>c.status==="ACTIVE").length} active | Leaders: ${insights.slice(0,3).map(i=>`${i.campaign_name?.slice(0,20)} ₹${parseFloat(i.spend||0).toFixed(0)}`).join(", ")} | Command: ${text}`;
     const nm=[...msgs,{role:"user",content:text}];setMsgs(nm);setInput("");setLoading(true);
-    try{const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,system:SYSTEM_PROMPT,messages:[...nm.slice(0,-1),{role:"user",content:ctx}]})});const d=await r.json();setMsgs(p=>[...p,{role:"assistant",content:d.content?.find(b=>b.type==="text")?.text||"Error."}]);}
-    catch{setMsgs(p=>[...p,{role:"assistant",content:"CONNECTION INTERRUPTED."}]);}finally{setLoading(false);}
+    try{
+      const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,system:SYSTEM_PROMPT,messages:[...nm.slice(0,-1),{role:"user",content:ctx}]})});
+      const d=await r.json();
+      setMsgs(p=>[...p,{role:"assistant",content:d.content?.find(b=>b.type==="text")?.text||"Error."}]);
+    }catch{setMsgs(p=>[...p,{role:"assistant",content:"CONNECTION INTERRUPTED."}]);}
+    finally{setLoading(false);}
   };
   const renderMsg=(text)=>text.split('\n').map((line,i)=>{
     if(/^(🔍|⚡|🎯|🧪|📊|💰|JARVIS)/.test(line))return<div key={i} style={{color:J.cyan,fontWeight:700,fontSize:11,marginTop:10,marginBottom:2,textShadow:J.cyanGlowSm,fontFamily:"monospace"}}>{line}</div>;
@@ -281,21 +338,62 @@ function AIPanel({onClose,campaigns,insights}){
 }
 
 export default function App(){
-  const[tab,setTab]=useState("overview");const[aiOpen,setAiOpen]=useState(false);
-  const[campaigns,setCampaigns]=useState([]);const[insights,setInsights]=useState([]);
-  const[loading,setLoading]=useState(true);const[lastUpdated,setLastUpdated]=useState(null);
-  const[time,setTime]=useState(new Date());const[selectedCampaign,setSelectedCampaign]=useState(null);
+  const[tab,setTab]=useState("overview");
+  const[aiOpen,setAiOpen]=useState(false);
+  const[campaigns,setCampaigns]=useState([]);
+  const[insights,setInsights]=useState([]);
+  const[loading,setLoading]=useState(true);
+  const[lastUpdated,setLastUpdated]=useState(null);
+  const[time,setTime]=useState(new Date());
+  const[selectedCampaign,setSelectedCampaign]=useState(null);
   const[statusFilter,setStatusFilter]=useState("ALL");
-  const[datePreset,setDatePreset]=useState("last_30d");const[dateSince,setDateSince]=useState("");const[dateUntil,setDateUntil]=useState("");
+  // Date range stored as plain state — NO useCallback dependency issues
+  const[datePreset,setDatePreset]=useState("last_30d");
+  const[dateSince,setDateSince]=useState("");
+  const[dateUntil,setDateUntil]=useState("");
+
   useEffect(()=>{const t=setInterval(()=>setTime(new Date()),1000);return()=>clearInterval(t);},[]);
-  const buildDateParams=useCallback((preset=datePreset)=>{if(preset==="custom"&&dateSince&&dateUntil)return`date_since=${dateSince}&date_until=${dateUntil}`;if(preset!=="custom")return`date_preset=${preset}`;return"date_preset=last_30d";},[datePreset,dateSince,dateUntil]);
-  const fetchData=useCallback(async(preset)=>{
-    setLoading(true);const params=buildDateParams(preset);
-    try{const[c,ins]=await Promise.all([fetch(`${API_URL}/api/campaigns`),fetch(`${API_URL}/api/insights?${params}`)]);
-      const cd=await c.json(),id=await ins.json();if(cd.data)setCampaigns(cd.data);if(id.data)setInsights(id.data);setLastUpdated(new Date());
-    }catch(e){console.log(e);}finally{setLoading(false);}
-  },[buildDateParams]);
-  useEffect(()=>{fetchData();const t=setInterval(()=>fetchData(),300000);return()=>clearInterval(t);},[]);
+
+  // fetchData takes ALL params directly — never reads stale state
+  const fetchData=async(preset,since,until)=>{
+    setLoading(true);
+    const params=buildParams(preset,since,until);
+    try{
+      const[c,ins]=await Promise.all([
+        fetch(`${API_URL}/api/campaigns`),
+        fetch(`${API_URL}/api/insights?${params}`)
+      ]);
+      const cd=await c.json(),id=await ins.json();
+      if(cd.data)setCampaigns(cd.data);
+      if(id.data)setInsights(id.data);
+      setLastUpdated(new Date());
+    }catch(e){console.log(e);}
+    finally{setLoading(false);}
+  };
+
+  // Initial load
+  useEffect(()=>{
+    fetchData("last_30d","","");
+    const t=setInterval(()=>fetchData(datePreset,dateSince,dateUntil),300000);
+    return()=>clearInterval(t);
+  // eslint-disable-next-line
+  },[]);
+
+  // When user selects a preset button
+  const handlePresetSelect=(preset)=>{
+    setDatePreset(preset);
+    if(preset!=="custom"){
+      fetchData(preset,"","");
+    }
+  };
+
+  // When user clicks Apply on custom range
+  const handleCustomApply=()=>{
+    if(dateSince&&dateUntil){
+      fetchData("custom",dateSince,dateUntil);
+    }
+  };
+
   const filteredCampaigns=statusFilter==="ALL"?campaigns:campaigns.filter(c=>c.status===statusFilter);
   const active=campaigns.filter(c=>c.status==="ACTIVE");
   const totalBudget=campaigns.reduce((a,c)=>a+(parseFloat(c.daily_budget||0)/100),0);
@@ -307,6 +405,7 @@ export default function App(){
   const avgCPM=totalImpressions>0?((totalSpend/totalImpressions)*1000).toFixed(0):0;
   const TABS=[{id:"overview",label:"OVERVIEW"},{id:"campaigns",label:`CAMPAIGNS [${campaigns.length}]`},{id:"insights",label:"INTEL"}];
   const trendData=Array.from({length:14},(_,i)=>({day:`D${i+1}`,v:Math.round(totalSpend/14*(0.6+Math.random()*.8))}));
+
   return(
     <div style={{fontFamily:"'Courier New',monospace",background:J.bg,minHeight:"100vh",color:J.text,paddingRight:aiOpen?370:0,transition:"padding-right .3s",position:"relative"}}>
       <style>{`
@@ -322,11 +421,17 @@ export default function App(){
         input[type="date"]::-webkit-calendar-picker-indicator{filter:invert(1) sepia(1) saturate(5) hue-rotate(175deg);opacity:.6;cursor:pointer}
       `}</style>
       <div style={{position:"fixed",inset:0,backgroundImage:`linear-gradient(${J.grid} 1px,transparent 1px),linear-gradient(90deg,${J.grid} 1px,transparent 1px)`,backgroundSize:"44px 44px",pointerEvents:"none",zIndex:0}}/>
+
+      {/* NAV */}
       <div style={{position:"sticky",top:0,zIndex:50,background:J.bg+"F0",borderBottom:`1px solid ${J.border}`,padding:"0 24px",backdropFilter:"blur(12px)"}}>
         <div style={{position:"absolute",bottom:0,left:0,right:0,height:1,background:`linear-gradient(90deg,transparent,${J.cyan}88,transparent)`}}/>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:62}}>
           <div style={{display:"flex",alignItems:"center",gap:20}}>
-            <RepriseLogo size={42}/>
+            {/* LOGO IN NAV — fixed size, no crop */}
+            <div style={{width:44,height:44,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+              <img src="/reprise-logo.jpg" alt="Reprise"
+                style={{width:44,height:44,objectFit:"contain",filter:"brightness(0) invert(1) sepia(1) saturate(4) hue-rotate(170deg) brightness(1.2) drop-shadow(0 0 6px #00D4FF)",display:"block"}}/>
+            </div>
             <div style={{width:1,height:38,background:J.borderBright}}/>
             {TABS.map(t=><button key={t.id} className="tbtn" onClick={()=>setTab(t.id)} style={{background:"none",border:"none",cursor:"pointer",fontSize:10,fontWeight:700,color:tab===t.id?J.cyan:J.muted,padding:"4px 0",borderBottom:tab===t.id?`2px solid ${J.cyan}`:"2px solid transparent",transition:"all .2s",fontFamily:"monospace",letterSpacing:2,textShadow:tab===t.id?J.cyanGlowSm:"none"}}>{t.label}</button>)}
           </div>
@@ -336,19 +441,28 @@ export default function App(){
               <div style={{width:6,height:6,borderRadius:"50%",background:loading?J.yellow:J.green,boxShadow:`0 0 8px ${loading?J.yellow:J.green}`,animation:"pulse 2s infinite"}}/>
               <span style={{fontSize:8,color:loading?J.yellow:J.green,fontFamily:"monospace",letterSpacing:2}}>{loading?"SYNCING":"ONLINE"}</span>
             </div>
-            <button onClick={()=>fetchData()} style={{padding:"5px 12px",background:"transparent",border:`1px solid ${J.borderBright}`,borderRadius:2,color:J.cyan,fontSize:9,cursor:"pointer",fontFamily:"monospace",letterSpacing:1.5,boxShadow:J.cyanGlowSm}}>↻ SYNC</button>
+            <button onClick={()=>fetchData(datePreset,dateSince,dateUntil)} style={{padding:"5px 12px",background:"transparent",border:`1px solid ${J.borderBright}`,borderRadius:2,color:J.cyan,fontSize:9,cursor:"pointer",fontFamily:"monospace",letterSpacing:1.5,boxShadow:J.cyanGlowSm}}>↻ SYNC</button>
             <button onClick={()=>setAiOpen(!aiOpen)} style={{padding:"6px 18px",background:aiOpen?J.cyan+"18":"transparent",border:`1px solid ${J.cyan}`,borderRadius:2,color:J.cyan,fontSize:10,cursor:"pointer",fontFamily:"monospace",letterSpacing:2,fontWeight:700,boxShadow:aiOpen?J.cyanGlow:J.cyanGlowSm,textShadow:J.cyanGlowSm}}>⚡ J.A.R.V.I.S</button>
           </div>
         </div>
       </div>
+
+      {/* DATE BAR */}
       <div style={{background:J.bg2+"CC",borderBottom:`1px solid ${J.border}`,padding:"8px 24px",backdropFilter:"blur(8px)"}}>
-        <DateRangePicker datePreset={datePreset} setDatePreset={setDatePreset} dateSince={dateSince} setDateSince={setDateSince} dateUntil={dateUntil} setDateUntil={setDateUntil} onApply={(p)=>fetchData(p)}/>
+        <DateRangePicker
+          activePreset={datePreset}
+          onSelect={handlePresetSelect}
+          dateSince={dateSince} setDateSince={setDateSince}
+          dateUntil={dateUntil} setDateUntil={setDateUntil}
+          onCustomApply={handleCustomApply}
+        />
       </div>
+
       <div style={{padding:"18px 24px 60px",position:"relative",zIndex:1,animation:"fadeUp .3s ease"}}>
         {tab==="overview"&&<>
           <div style={{display:"flex",gap:8,marginBottom:14,padding:"7px 14px",background:J.bg2,border:`1px solid ${J.border}`,borderRadius:2,alignItems:"center"}}>
             <div style={{width:5,height:5,borderRadius:"50%",background:J.green,animation:"pulse 2s infinite",boxShadow:`0 0 6px ${J.green}`}}/>
-            <span style={{fontFamily:"monospace",fontSize:9,color:J.muted,letterSpacing:1.5}}>SYSTEM: OPERATIONAL · META: CONNECTED · {campaigns.length} CAMPAIGNS · {active.length} ACTIVE · SYNCED: {lastUpdated?.toLocaleTimeString()||"—"}</span>
+            <span style={{fontFamily:"monospace",fontSize:9,color:J.muted,letterSpacing:1.5}}>SYSTEM: OPERATIONAL · META: CONNECTED · {campaigns.length} CAMPAIGNS · {active.length} ACTIVE · RANGE: {DATE_PRESETS.find(d=>d.value===datePreset)?.label||datePreset} · SYNCED: {lastUpdated?.toLocaleTimeString()||"—"}</span>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"280px 1fr 260px",gap:14,marginBottom:14}}>
             <JCard style={{padding:18}} glow>
@@ -360,15 +474,21 @@ export default function App(){
                 <ArcReactor value={parseInt(avgCPC)} max={100} label="CPC ₹" color={J.yellow} size={88}/>
               </div>
             </JCard>
-            <JCard style={{padding:20,display:"flex",flexDirection:"column",alignItems:"center",gap:14}} glow>
-              <div style={{position:"relative",display:"flex",alignItems:"center",justifyContent:"center"}}>
-                <div style={{position:"absolute",width:180,height:180,border:`1px solid ${J.cyan}11`,borderRadius:"50%",animation:"rotate 25s linear infinite"}}/>
-                <div style={{position:"absolute",width:150,height:150,border:`1px dashed ${J.cyan}18`,borderRadius:"50%",animation:"rotate 18s linear infinite reverse"}}/>
-                <div style={{position:"absolute",width:120,height:120,border:`1px solid ${J.cyan}22`,borderRadius:"50%"}}/>
-                <RepriseLogo size={90}/>
+
+            {/* CENTER with logo — properly centered */}
+            <JCard style={{padding:20,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16}} glow>
+              <div style={{position:"relative",width:200,height:200,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                <div style={{position:"absolute",width:200,height:200,border:`1px solid ${J.cyan}11`,borderRadius:"50%",animation:"rotate 25s linear infinite"}}/>
+                <div style={{position:"absolute",width:170,height:170,border:`1px dashed ${J.cyan}18`,borderRadius:"50%",animation:"rotate 18s linear infinite reverse"}}/>
+                <div style={{position:"absolute",width:140,height:140,border:`1px solid ${J.cyan}22`,borderRadius:"50%"}}/>
+                {/* LOGO — centered, contained within circle */}
+                <div style={{width:100,height:100,display:"flex",alignItems:"center",justifyContent:"center",position:"relative",zIndex:1}}>
+                  <img src="/reprise-logo.jpg" alt="Reprise"
+                    style={{width:"100%",height:"100%",objectFit:"contain",filter:"brightness(0) invert(1) sepia(1) saturate(4) hue-rotate(170deg) brightness(1.3) drop-shadow(0 0 8px #00D4FF) drop-shadow(0 0 16px #00D4FF66)",display:"block"}}/>
+                </div>
               </div>
               <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,width:"100%"}}>
-                {[[fmt(totalSpend),"30D SPEND",J.cyan],[fmt(totalBudget),"DAILY BUDGET",J.orange],[fmtN(totalImpressions),"IMPRESSIONS",J.muted]].map(([v,l,c])=>(
+                {[[fmt(totalSpend),"SPEND",J.cyan],[fmt(totalBudget),"DAILY BUDGET",J.orange],[fmtN(totalImpressions),"IMPRESSIONS",J.muted]].map(([v,l,c])=>(
                   <div key={l} style={{textAlign:"center",padding:"8px 6px",background:c+"0A",border:`1px solid ${c}22`,borderRadius:2}}>
                     <div style={{fontSize:16,fontWeight:900,color:c,fontFamily:"'Orbitron',monospace",textShadow:`0 0 10px ${c}66`,letterSpacing:-0.5}}>{v}</div>
                     <div style={{fontSize:7,color:J.muted,letterSpacing:1.5,marginTop:2}}>{l}</div>
@@ -376,6 +496,7 @@ export default function App(){
                 ))}
               </div>
             </JCard>
+
             <JCard style={{padding:18}} glow>
               <div style={{fontSize:9,color:J.cyan,letterSpacing:2,marginBottom:14,fontFamily:"monospace",textShadow:J.cyanGlowSm}}>◈ FINANCIAL INTEL</div>
               {[["CAMPAIGNS",campaigns.length,J.cyan],["ACTIVE",active.length,J.green],["W/ INTEL",insights.length,J.yellow],["AVG CPM",`₹${avgCPM}`,J.cyan],["AVG CPC",`₹${avgCPC}`,J.green],["AVG CTR",`${avgCTR}%`,parseFloat(avgCTR)>=1?J.green:J.red]].map(([l,v,c])=>(
@@ -413,6 +534,7 @@ export default function App(){
             </JCard>
           </div>
         </>}
+
         {tab==="campaigns"&&<JCard style={{overflow:"hidden"}} glow>
           <div style={{padding:"12px 18px",borderBottom:`1px solid ${J.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             <div style={{fontSize:10,color:J.cyan,letterSpacing:2,fontFamily:"monospace",textShadow:J.cyanGlowSm}}>◈ CAMPAIGN REGISTRY — {filteredCampaigns.length} ENTRIES</div>
@@ -432,7 +554,7 @@ export default function App(){
                 {filteredCampaigns.map((c,i)=>{
                   const ci=insights.find(ins=>ins.campaign_id===c.id||ins.campaign_name===c.name)||{};
                   const ctr=parseFloat(ci.ctr||0),cpc=parseFloat(ci.cpc||0);
-                  return(<tr key={i} className="trow" onClick={()=>setSelectedCampaign(c)} style={{borderBottom:`1px solid ${J.border}`,transition:"background .15s",cursor:"pointer"}}>
+                  return(<tr key={i} className="trow" onClick={()=>setSelectedCampaign(c)} style={{borderBottom:`1px solid ${J.border}`,transition:"background .15s"}}>
                     <td style={{padding:"11px 14px",fontSize:11,fontWeight:700,color:J.text,fontFamily:"monospace",maxWidth:280,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}><span style={{color:J.cyan,marginRight:6,fontSize:8}}>▸</span>{c.name}</td>
                     <td style={{padding:"11px 14px",textAlign:"center"}}><span style={{padding:"2px 8px",borderRadius:2,fontSize:8,fontFamily:"monospace",letterSpacing:1.5,background:c.status==="ACTIVE"?J.green+"18":J.muted+"18",color:c.status==="ACTIVE"?J.green:J.muted,border:`1px solid ${c.status==="ACTIVE"?J.green+"44":J.muted+"33"}`,boxShadow:c.status==="ACTIVE"?`0 0 6px ${J.green}44`:""}}>{c.status}</span></td>
                     <td style={{padding:"11px 14px",textAlign:"center",fontSize:9,color:J.muted,fontFamily:"monospace"}}>{c.objective?.replace("OUTCOME_","")||"—"}</td>
@@ -447,6 +569,7 @@ export default function App(){
             </table>
           </div>}
         </JCard>}
+
         {tab==="insights"&&<JCard style={{overflow:"hidden"}} glow>
           <div style={{padding:"12px 18px",borderBottom:`1px solid ${J.border}`}}>
             <div style={{fontSize:10,color:J.cyan,letterSpacing:2,fontFamily:"monospace",textShadow:J.cyanGlowSm}}>◈ PERFORMANCE INTELLIGENCE — {insights.length} TARGETS · CLICK ROW TO EXPAND</div>
@@ -460,7 +583,7 @@ export default function App(){
               <tbody>
                 {insights.map((c,i)=>{
                   const ctr=parseFloat(c.ctr||0),cpc=parseFloat(c.cpc||0),freq=parseFloat(c.frequency||0);
-                  return(<tr key={i} className="trow" onClick={()=>{const camp=campaigns.find(x=>x.id===c.campaign_id||x.name===c.campaign_name);if(camp)setSelectedCampaign(camp);}} style={{borderBottom:`1px solid ${J.border}`,transition:"background .15s",cursor:"pointer"}}>
+                  return(<tr key={i} className="trow" onClick={()=>{const camp=campaigns.find(x=>x.id===c.campaign_id||x.name===c.campaign_name);if(camp)setSelectedCampaign(camp);}} style={{borderBottom:`1px solid ${J.border}`,transition:"background .15s"}}>
                     <td style={{padding:"10px 14px",fontSize:11,fontWeight:700,color:J.text,fontFamily:"monospace",maxWidth:240,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}><span style={{color:J.cyan,marginRight:6,fontSize:8}}>▸</span>{c.campaign_name}</td>
                     <td style={{padding:"10px 14px",textAlign:"center",fontSize:12,fontWeight:700,color:J.cyan,fontFamily:"monospace",textShadow:J.cyanGlowSm}}>{fmt(parseFloat(c.spend||0))}</td>
                     <td style={{padding:"10px 14px",textAlign:"center",fontSize:10,color:J.muted,fontFamily:"monospace"}}>{fmtN(parseInt(c.impressions||0))}</td>
@@ -477,6 +600,7 @@ export default function App(){
           </div>}
         </JCard>}
       </div>
+
       <div style={{position:"fixed",bottom:0,left:0,right:aiOpen?370:0,background:J.bg+"F0",borderTop:`1px solid ${J.border}`,padding:"5px 24px",display:"flex",alignItems:"center",gap:14,zIndex:40,backdropFilter:"blur(10px)",transition:"right .3s"}}>
         <div style={{position:"absolute",top:0,left:0,right:0,height:1,background:`linear-gradient(90deg,transparent,${J.cyan}44,transparent)`}}/>
         <div style={{width:5,height:5,borderRadius:"50%",background:J.green,animation:"pulse 2s infinite",boxShadow:`0 0 6px ${J.green}`}}/>
@@ -485,8 +609,9 @@ export default function App(){
         <span style={{fontSize:8,color:J.muted,fontFamily:"monospace",letterSpacing:1}}>{campaigns.length} CAMPAIGNS</span>
         <span style={{fontSize:8,color:J.border}}>·</span>
         <span style={{fontSize:8,color:J.cyan,fontFamily:"monospace",letterSpacing:1}}>{DATE_PRESETS.find(d=>d.value===datePreset)?.label||datePreset}</span>
-        <span style={{marginLeft:"auto",fontSize:8,color:J.cyan,fontFamily:"monospace",letterSpacing:1.5,cursor:"pointer",textShadow:J.cyanGlowSm}} onClick={()=>fetchData()}>↻ SYNC</span>
+        <span style={{marginLeft:"auto",fontSize:8,color:J.cyan,fontFamily:"monospace",letterSpacing:1.5,cursor:"pointer",textShadow:J.cyanGlowSm}} onClick={()=>fetchData(datePreset,dateSince,dateUntil)}>↻ SYNC</span>
       </div>
+
       {selectedCampaign&&<CampaignDrawer campaign={selectedCampaign} insights={insights} datePreset={datePreset} dateSince={dateSince} dateUntil={dateUntil} onClose={()=>setSelectedCampaign(null)}/>}
       {aiOpen&&<AIPanel onClose={()=>setAiOpen(false)} campaigns={campaigns} insights={insights}/>}
     </div>
