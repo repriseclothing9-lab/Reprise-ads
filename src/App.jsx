@@ -343,7 +343,7 @@ function AIPanel({onClose,metaInsights,googleSummary,snapSummary,campaigns,dateP
     const ctx=`\n\nREPRISE (${datePreset}): META spend=${fmt(metaSpend)} roas=${metaInsights.filter(i=>i.roas).length>0?(metaInsights.filter(i=>i.roas).reduce((a,i)=>a+parseFloat(i.roas),0)/metaInsights.filter(i=>i.roas).length).toFixed(2)+"x":"N/A"} | GOOGLE spend=${fmt(googleSpend)} roas=${googleSummary?.roas?.toFixed(2)||"N/A"}x | SNAP spend=${fmt(snapSpend)} roas=${snapSummary?.roas?.toFixed(2)||"N/A"}x | Total=${fmt(total)} | Command: ${text}`;
     const nm=[...msgs,{role:"user",content:text}];setMsgs(nm);setInput("");setLoading(true);
     try{
-      const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,system:SYSTEM_PROMPT,messages:[...nm.slice(0,-1),{role:"user",content:ctx}]})});
+      const r=await fetch(`${API_URL}/api/chat`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({system:SYSTEM_PROMPT,messages:[...nm.slice(0,-1),{role:"user",content:ctx}]})});
       const d=await r.json();
       setMsgs(p=>[...p,{role:"assistant",content:d.content?.find(b=>b.type==="text")?.text||"Error."}]);
     }catch{setMsgs(p=>[...p,{role:"assistant",content:"CONNECTION INTERRUPTED."}]);}
