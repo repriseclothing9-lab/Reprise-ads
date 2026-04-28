@@ -6,348 +6,277 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// META credentials
-const META_ACCESS_TOKEN = process.env.META_ACCESS_TOKEN;
-const META_AD_ACCOUNT_ID = process.env.META_AD_ACCOUNT_ID;
-const getMetaAccountId = () => (META_AD_ACCOUNT_ID || '').replace('act_', '');
-
-// GOOGLE ADS credentials
+// ── CREDENTIALS ─────────────────────────────────────────────
+const META_ACCESS_TOKEN    = process.env.META_ACCESS_TOKEN;
+const META_AD_ACCOUNT_ID   = process.env.META_AD_ACCOUNT_ID;
 const GOOGLE_DEVELOPER_TOKEN = process.env.GOOGLE_DEVELOPER_TOKEN;
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+const GOOGLE_CLIENT_ID     = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 const GOOGLE_REFRESH_TOKEN = process.env.GOOGLE_REFRESH_TOKEN;
-const GOOGLE_CUSTOMER_ID = process.env.GOOGLE_CUSTOMER_ID; // without dashes e.g. 1234567890
+const GOOGLE_CUSTOMER_ID   = process.env.GOOGLE_CUSTOMER_ID;
+const SNAP_CLIENT_ID       = process.env.SNAP_CLIENT_ID;
+const SNAP_CLIENT_SECRET   = process.env.SNAP_CLIENT_SECRET;
+const SNAP_REFRESH_TOKEN   = process.env.SNAP_REFRESH_TOKEN;
+const SNAP_AD_ACCOUNT_ID   = process.env.SNAP_AD_ACCOUNT_ID;
+
+const getMetaId = () => (META_AD_ACCOUNT_ID || '').replace('act_', '');
 
 app.get('/ping', (req, res) => res.send('OK'));
 
-// ─── GOOGLE: Get access token from refresh token ─────────────
-async function getGoogleAccessToken() {
-  const response = await axios.post('https://oauth2.googleapis.com/token', {
-    client_id: GOOGLE_CLIENT_ID,
-    client_secret: GOOGLE_CLIENT_SECRET,
-    refresh_token: GOOGLE_REFRESH_TOKEN,
-    grant_type: 'refresh_token',
+// ── GOOGLE HELPERS ────────────────────────────────────────────
+async function getGoogleToken() {
+  const r = await axios.post('https://oauth2.googleapis.com/token', {
+    client_id: GOOGLE_CLIENT_ID, client_secret: GOOGLE_CLIENT_SECRET,
+    refresh_token: GOOGLE_REFRESH_TOKEN, grant_type: 'refresh_token',
   });
-  return response.data.access_token;
+  return r.data.access_token;
 }
-
-// ─── GOOGLE: Build date range for GAQL ───────────────────────
-function buildGoogleDateRange(date_preset, date_since, date_until) {
+function googleDateRange(preset, since, until) {
   const today = new Date();
   const fmt = d => d.toISOString().slice(0, 10);
-  if (date_since && date_until) return `BETWEEN '${date_since}' AND '${date_until}'`;
-  switch (date_preset) {
-    case 'today': return `= '${fmt(today)}'`;
-    case 'last_7d': { const d = new Date(today); d.setDate(d.getDate() - 7); return `BETWEEN '${fmt(d)}' AND '${fmt(today)}'`; }
-    case 'last_14d': { const d = new Date(today); d.setDate(d.getDate() - 14); return `BETWEEN '${fmt(d)}' AND '${fmt(today)}'`; }
-    case 'last_30d': { const d = new Date(today); d.setDate(d.getDate() - 30); return `BETWEEN '${fmt(d)}' AND '${fmt(today)}'`; }
-    case 'last_60d': { const d = new Date(today); d.setDate(d.getDate() - 60); return `BETWEEN '${fmt(d)}' AND '${fmt(today)}'`; }
-    case 'last_90d': { const d = new Date(today); d.setDate(d.getDate() - 90); return `BETWEEN '${fmt(d)}' AND '${fmt(today)}'`; }
-    default: { const d = new Date(today); d.setDate(d.getDate() - 30); return `BETWEEN '${fmt(d)}' AND '${fmt(today)}'`; }
-  }
+  if (since && until) return `BETWEEN '${since}' AND '${until}'`;
+  const days = { today: 0, last_7d: 7, last_14d: 14, last_30d: 30, last_60d: 60, last_90d: 90 }[preset] ?? 30;
+  if (days === 0) return `= '${fmt(today)}'`;
+  const from = new Date(today); from.setDate(from.getDate() - days);
+  return `BETWEEN '${fmt(from)}' AND '${fmt(today)}'`;
 }
-
-// ─── GOOGLE: Run GAQL query ───────────────────────────────────
-async function runGoogleQuery(query) {
-  const accessToken = await getGoogleAccessToken();
-  const customerId = (GOOGLE_CUSTOMER_ID || '').replace(/-/g, '');
-  const response = await axios.post(
-    `https://googleads.googleapis.com/v17/customers/${customerId}/googleAds:search`,
+async function googleQuery(query) {
+  const token = await getGoogleToken();
+  const cid = (GOOGLE_CUSTOMER_ID || '').replace(/-/g, '');
+  const r = await axios.post(
+    `https://googleads.googleapis.com/v17/customers/${cid}/googleAds:search`,
     { query },
-    {
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'developer-token': GOOGLE_DEVELOPER_TOKEN,
-        'Content-Type': 'application/json',
-      }
-    }
+    { headers: { Authorization: `Bearer ${token}`, 'developer-token': GOOGLE_DEVELOPER_TOKEN, 'Content-Type': 'application/json' } }
   );
-  return response.data.results || [];
+  return r.data.results || [];
 }
 
-// ─── META ENDPOINTS ───────────────────────────────────────────
+// ── SNAPCHAT HELPERS ──────────────────────────────────────────
+let snapTokenCache = null;
+async function getSnapToken() {
+  if (snapTokenCache && snapTokenCache.expires > Date.now()) return snapTokenCache.token;
+  const r = await axios.post('https://accounts.snapchat.com/login/oauth2/access_token',
+    new URLSearchParams({
+      client_id: SNAP_CLIENT_ID, client_secret: SNAP_CLIENT_SECRET,
+      refresh_token: SNAP_REFRESH_TOKEN, grant_type: 'refresh_token',
+    }),
+    { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+  );
+  snapTokenCache = { token: r.data.access_token, expires: Date.now() + (r.data.expires_in - 60) * 1000 };
+  return snapTokenCache.token;
+}
+function snapDateRange(preset, since, until) {
+  const today = new Date();
+  const fmt = d => d.toISOString().slice(0, 10);
+  if (since && until) return { start_time: since, end_time: until };
+  const days = { today: 0, last_7d: 7, last_14d: 14, last_30d: 30, last_60d: 60, last_90d: 90 }[preset] ?? 30;
+  const from = new Date(today); from.setDate(from.getDate() - Math.max(days, 1));
+  return { start_time: fmt(from), end_time: fmt(today) };
+}
 
+// ── META ENDPOINTS ────────────────────────────────────────────
 app.get('/api/campaigns', async (req, res) => {
   try {
-    const response = await axios.get(`https://graph.facebook.com/v19.0/act_${getMetaAccountId()}/campaigns`, {
-      params: {
-        access_token: META_ACCESS_TOKEN,
-        fields: 'id,name,status,daily_budget,lifetime_budget,objective,start_time,stop_time,created_time,updated_time,budget_remaining,buying_type',
-        limit: 100,
-      }
+    const r = await axios.get(`https://graph.facebook.com/v19.0/act_${getMetaId()}/campaigns`, {
+      params: { access_token: META_ACCESS_TOKEN, fields: 'id,name,status,daily_budget,lifetime_budget,objective,start_time,stop_time,created_time,updated_time,budget_remaining,buying_type', limit: 100 }
     });
-    res.json(response.data);
-  } catch (error) {
-    res.status(500).json({ error: error.response?.data?.error?.message || error.message });
-  }
+    res.json(r.data);
+  } catch (e) { res.status(500).json({ error: e.response?.data?.error?.message || e.message }); }
 });
 
 app.get('/api/insights', async (req, res) => {
   try {
     const { date_preset, date_since, date_until } = req.query;
-    console.log('META insights — preset:', date_preset, 'since:', date_since, 'until:', date_until);
     const params = {
       access_token: META_ACCESS_TOKEN,
-      fields: 'campaign_id,campaign_name,spend,impressions,clicks,ctr,cpc,cpm,reach,frequency,actions,action_values,cost_per_action_type,purchase_roas,outbound_clicks',
-      level: 'campaign',
-      limit: 100,
+      fields: 'campaign_id,campaign_name,spend,impressions,clicks,ctr,cpc,cpm,reach,frequency,actions,action_values,purchase_roas,outbound_clicks',
+      level: 'campaign', limit: 100,
     };
     if (date_since && date_until) params.time_range = JSON.stringify({ since: date_since, until: date_until });
-    else if (date_preset && date_preset !== 'custom') params.date_preset = date_preset;
-    else params.date_preset = 'last_30d';
-    const response = await axios.get(`https://graph.facebook.com/v19.0/act_${getMetaAccountId()}/insights`, { params });
-    const data = (response.data.data || []).map(row => {
+    else params.date_preset = date_preset && date_preset !== 'custom' ? date_preset : 'last_30d';
+    const r = await axios.get(`https://graph.facebook.com/v19.0/act_${getMetaId()}/insights`, { params });
+    const data = (r.data.data || []).map(row => {
       const spend = parseFloat(row.spend || 0);
-      const nativeRoas = row.purchase_roas?.[0]?.value ? parseFloat(row.purchase_roas[0].value) : null;
-      const purchaseValue = (row.action_values || []).find(a => a.action_type === 'purchase')?.value;
-      const calculatedRoas = purchaseValue && spend > 0 ? parseFloat(purchaseValue) / spend : null;
-      const omniValue = (row.action_values || []).find(a => a.action_type === 'omni_purchase')?.value;
-      const omniRoas = omniValue && spend > 0 ? parseFloat(omniValue) / spend : null;
-      const roas = nativeRoas || calculatedRoas || omniRoas || null;
-      const revenue = purchaseValue ? parseFloat(purchaseValue) : omniValue ? parseFloat(omniValue) : nativeRoas && spend > 0 ? nativeRoas * spend : null;
+      const nr = row.purchase_roas?.[0]?.value ? parseFloat(row.purchase_roas[0].value) : null;
+      const pv = (row.action_values || []).find(a => a.action_type === 'purchase')?.value;
+      const ov = (row.action_values || []).find(a => a.action_type === 'omni_purchase')?.value;
+      const roas = nr || (pv && spend > 0 ? parseFloat(pv) / spend : null) || (ov && spend > 0 ? parseFloat(ov) / spend : null);
+      const revenue = pv ? parseFloat(pv) : ov ? parseFloat(ov) : nr && spend > 0 ? nr * spend : null;
       return { ...row, roas, revenue };
     });
-    res.json({ ...response.data, data });
-  } catch (error) {
-    res.status(500).json({ error: error.response?.data?.error?.message || error.message });
-  }
+    res.json({ ...r.data, data });
+  } catch (e) { res.status(500).json({ error: e.response?.data?.error?.message || e.message }); }
 });
 
 app.get('/api/campaigns/:id/insights', async (req, res) => {
   try {
-    const { id } = req.params;
-    const { date_preset, date_since, date_until } = req.query;
-    const params = {
-      access_token: META_ACCESS_TOKEN,
-      fields: 'campaign_name,spend,impressions,clicks,ctr,cpc,cpm,reach,frequency,actions,action_values,purchase_roas,outbound_clicks',
-      level: 'campaign',
-    };
+    const { id } = req.params; const { date_preset, date_since, date_until } = req.query;
+    const params = { access_token: META_ACCESS_TOKEN, fields: 'campaign_name,spend,impressions,clicks,ctr,cpc,cpm,reach,frequency,actions,action_values,purchase_roas', level: 'campaign' };
     if (date_since && date_until) params.time_range = JSON.stringify({ since: date_since, until: date_until });
-    else if (date_preset && date_preset !== 'custom') params.date_preset = date_preset;
-    else params.date_preset = 'last_30d';
-    const response = await axios.get(`https://graph.facebook.com/v19.0/${id}/insights`, { params });
-    res.json(response.data);
-  } catch (error) {
-    res.status(500).json({ error: error.response?.data?.error?.message || error.message });
-  }
+    else params.date_preset = date_preset && date_preset !== 'custom' ? date_preset : 'last_30d';
+    const r = await axios.get(`https://graph.facebook.com/v19.0/${id}/insights`, { params });
+    res.json(r.data);
+  } catch (e) { res.status(500).json({ error: e.response?.data?.error?.message || e.message }); }
 });
 
 app.get('/api/campaigns/:id/daily', async (req, res) => {
   try {
-    const { id } = req.params;
-    const { date_preset, date_since, date_until } = req.query;
-    const params = {
-      access_token: META_ACCESS_TOKEN,
-      fields: 'spend,impressions,clicks,ctr,cpc,cpm,reach,frequency,actions,action_values,purchase_roas',
-      time_increment: 1,
-      limit: 90,
-    };
+    const { id } = req.params; const { date_preset, date_since, date_until } = req.query;
+    const params = { access_token: META_ACCESS_TOKEN, fields: 'spend,impressions,clicks,ctr,cpc,cpm,reach,frequency,actions,action_values,purchase_roas', time_increment: 1, limit: 90 };
     if (date_since && date_until) params.time_range = JSON.stringify({ since: date_since, until: date_until });
-    else if (date_preset && date_preset !== 'custom') params.date_preset = date_preset;
-    else params.date_preset = 'last_30d';
-    const response = await axios.get(`https://graph.facebook.com/v19.0/${id}/insights`, { params });
-    res.json(response.data);
-  } catch (error) {
-    res.status(500).json({ error: error.response?.data?.error?.message || error.message });
-  }
+    else params.date_preset = date_preset && date_preset !== 'custom' ? date_preset : 'last_30d';
+    const r = await axios.get(`https://graph.facebook.com/v19.0/${id}/insights`, { params });
+    res.json(r.data);
+  } catch (e) { res.status(500).json({ error: e.response?.data?.error?.message || e.message }); }
 });
 
 app.get('/api/campaigns/:id/adsets', async (req, res) => {
   try {
     const { id } = req.params;
-    const response = await axios.get(`https://graph.facebook.com/v19.0/${id}/adsets`, {
-      params: {
-        access_token: META_ACCESS_TOKEN,
-        fields: 'id,name,status,daily_budget,lifetime_budget,billing_event,optimization_goal,start_time,end_time',
-        limit: 50,
-      }
+    const r = await axios.get(`https://graph.facebook.com/v19.0/${id}/adsets`, {
+      params: { access_token: META_ACCESS_TOKEN, fields: 'id,name,status,daily_budget,lifetime_budget,billing_event,optimization_goal,start_time,end_time', limit: 50 }
     });
-    res.json({ adsets: response.data.data || [], insights: [] });
-  } catch (error) {
-    res.status(500).json({ error: error.response?.data?.error?.message || error.message });
-  }
+    res.json({ adsets: r.data.data || [] });
+  } catch (e) { res.status(500).json({ error: e.response?.data?.error?.message || e.message }); }
 });
 
-// ─── GOOGLE ADS ENDPOINTS ─────────────────────────────────────
-
-// Google campaigns
+// ── GOOGLE ADS ENDPOINTS ──────────────────────────────────────
 app.get('/api/google/campaigns', async (req, res) => {
   try {
     const { date_preset, date_since, date_until } = req.query;
-    const dateRange = buildGoogleDateRange(date_preset, date_since, date_until);
-    const query = `
-      SELECT
-        campaign.id,
-        campaign.name,
-        campaign.status,
-        campaign.advertising_channel_type,
-        campaign_budget.amount_micros,
-        metrics.cost_micros,
-        metrics.impressions,
-        metrics.clicks,
-        metrics.ctr,
-        metrics.average_cpc,
-        metrics.average_cpm,
-        metrics.conversions,
-        metrics.conversions_value,
-        metrics.search_impression_share
-      FROM campaign
-      WHERE segments.date ${dateRange}
-        AND campaign.status != 'REMOVED'
-      ORDER BY metrics.cost_micros DESC
-      LIMIT 100
-    `;
-    const results = await runGoogleQuery(query);
-    const campaigns = results.map(r => ({
-      id: r.campaign?.id,
-      name: r.campaign?.name,
-      status: r.campaign?.status,
-      channel: r.campaign?.advertisingChannelType,
-      daily_budget: r.campaignBudget?.amountMicros ? (parseInt(r.campaignBudget.amountMicros) / 1000000) : null,
-      spend: r.metrics?.costMicros ? (parseInt(r.metrics.costMicros) / 1000000) : 0,
-      impressions: parseInt(r.metrics?.impressions || 0),
-      clicks: parseInt(r.metrics?.clicks || 0),
-      ctr: parseFloat(r.metrics?.ctr || 0) * 100,
-      cpc: r.metrics?.averageCpc ? (parseInt(r.metrics.averageCpc) / 1000000) : 0,
-      cpm: r.metrics?.averageCpm ? (parseInt(r.metrics.averageCpm) / 1000000) : 0,
-      conversions: parseFloat(r.metrics?.conversions || 0),
-      conversion_value: parseFloat(r.metrics?.conversionsValue || 0),
-      roas: r.metrics?.conversionsValue && r.metrics?.costMicros && parseInt(r.metrics.costMicros) > 0
-        ? parseFloat(r.metrics.conversionsValue) / (parseInt(r.metrics.costMicros) / 1000000)
-        : null,
-      impression_share: r.metrics?.searchImpressionShare,
-    }));
-    res.json({ data: campaigns });
-  } catch (error) {
-    console.error('Google campaigns error:', error.response?.data || error.message);
-    res.status(500).json({ error: error.response?.data?.error?.message || error.message });
-  }
+    const dr = googleDateRange(date_preset, date_since, date_until);
+    const results = await googleQuery(`
+      SELECT campaign.id,campaign.name,campaign.status,campaign.advertising_channel_type,
+        campaign_budget.amount_micros,metrics.cost_micros,metrics.impressions,metrics.clicks,
+        metrics.ctr,metrics.average_cpc,metrics.average_cpm,metrics.conversions,metrics.conversions_value
+      FROM campaign WHERE segments.date ${dr} AND campaign.status != 'REMOVED'
+      ORDER BY metrics.cost_micros DESC LIMIT 100`);
+    const data = results.map(r => {
+      const spend = r.metrics?.costMicros ? parseInt(r.metrics.costMicros) / 1e6 : 0;
+      const revenue = parseFloat(r.metrics?.conversionsValue || 0);
+      return {
+        id: r.campaign?.id, name: r.campaign?.name, status: r.campaign?.status,
+        channel: r.campaign?.advertisingChannelType,
+        daily_budget: r.campaignBudget?.amountMicros ? parseInt(r.campaignBudget.amountMicros) / 1e6 : null,
+        spend, impressions: parseInt(r.metrics?.impressions || 0),
+        clicks: parseInt(r.metrics?.clicks || 0),
+        ctr: parseFloat(r.metrics?.ctr || 0) * 100,
+        cpc: r.metrics?.averageCpc ? parseInt(r.metrics.averageCpc) / 1e6 : 0,
+        cpm: r.metrics?.averageCpm ? parseInt(r.metrics.averageCpm) / 1e6 : 0,
+        conversions: parseFloat(r.metrics?.conversions || 0),
+        revenue, roas: revenue > 0 && spend > 0 ? revenue / spend : null, platform: 'google',
+      };
+    });
+    res.json({ data });
+  } catch (e) { console.error('Google campaigns:', e.message); res.status(500).json({ error: e.message, data: [] }); }
 });
 
-// Google account-level summary
 app.get('/api/google/insights', async (req, res) => {
   try {
     const { date_preset, date_since, date_until } = req.query;
-    const dateRange = buildGoogleDateRange(date_preset, date_since, date_until);
-    const query = `
-      SELECT
-        metrics.cost_micros,
-        metrics.impressions,
-        metrics.clicks,
-        metrics.ctr,
-        metrics.average_cpc,
-        metrics.average_cpm,
-        metrics.conversions,
-        metrics.conversions_value,
-        metrics.all_conversions
-      FROM customer
-      WHERE segments.date ${dateRange}
-    `;
-    const results = await runGoogleQuery(query);
-    const totals = results.reduce((acc, r) => {
-      acc.spend += r.metrics?.costMicros ? parseInt(r.metrics.costMicros) / 1000000 : 0;
-      acc.impressions += parseInt(r.metrics?.impressions || 0);
-      acc.clicks += parseInt(r.metrics?.clicks || 0);
-      acc.conversions += parseFloat(r.metrics?.conversions || 0);
-      acc.conversion_value += parseFloat(r.metrics?.conversionsValue || 0);
-      return acc;
+    const dr = googleDateRange(date_preset, date_since, date_until);
+    const results = await googleQuery(`
+      SELECT metrics.cost_micros,metrics.impressions,metrics.clicks,metrics.ctr,
+        metrics.average_cpc,metrics.average_cpm,metrics.conversions,metrics.conversions_value
+      FROM customer WHERE segments.date ${dr}`);
+    const t = results.reduce((a, r) => {
+      a.spend += r.metrics?.costMicros ? parseInt(r.metrics.costMicros) / 1e6 : 0;
+      a.impressions += parseInt(r.metrics?.impressions || 0);
+      a.clicks += parseInt(r.metrics?.clicks || 0);
+      a.conversions += parseFloat(r.metrics?.conversions || 0);
+      a.conversion_value += parseFloat(r.metrics?.conversionsValue || 0);
+      return a;
     }, { spend: 0, impressions: 0, clicks: 0, conversions: 0, conversion_value: 0 });
-    totals.ctr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0;
-    totals.cpc = totals.clicks > 0 ? totals.spend / totals.clicks : 0;
-    totals.cpm = totals.impressions > 0 ? (totals.spend / totals.impressions) * 1000 : 0;
-    totals.roas = totals.spend > 0 && totals.conversion_value > 0 ? totals.conversion_value / totals.spend : null;
-    res.json({ data: totals });
-  } catch (error) {
-    console.error('Google insights error:', error.response?.data || error.message);
-    res.status(500).json({ error: error.response?.data?.error?.message || error.message, data: null });
-  }
+    t.ctr = t.impressions > 0 ? t.clicks / t.impressions * 100 : 0;
+    t.cpc = t.clicks > 0 ? t.spend / t.clicks : 0;
+    t.cpm = t.impressions > 0 ? t.spend / t.impressions * 1000 : 0;
+    t.roas = t.spend > 0 && t.conversion_value > 0 ? t.conversion_value / t.spend : null;
+    t.revenue = t.conversion_value;
+    res.json({ data: t });
+  } catch (e) { console.error('Google insights:', e.message); res.status(500).json({ error: e.message, data: null }); }
 });
 
-// Google daily breakdown
-app.get('/api/google/daily', async (req, res) => {
+// ── SNAPCHAT ENDPOINTS ────────────────────────────────────────
+app.get('/api/snapchat/campaigns', async (req, res) => {
   try {
     const { date_preset, date_since, date_until } = req.query;
-    const dateRange = buildGoogleDateRange(date_preset, date_since, date_until);
-    const query = `
-      SELECT
-        segments.date,
-        metrics.cost_micros,
-        metrics.impressions,
-        metrics.clicks,
-        metrics.ctr,
-        metrics.average_cpc,
-        metrics.conversions_value,
-        metrics.conversions
-      FROM customer
-      WHERE segments.date ${dateRange}
-      ORDER BY segments.date ASC
-    `;
-    const results = await runGoogleQuery(query);
-    const daily = results.map(r => ({
-      date: r.segments?.date,
-      spend: r.metrics?.costMicros ? parseInt(r.metrics.costMicros) / 1000000 : 0,
-      impressions: parseInt(r.metrics?.impressions || 0),
-      clicks: parseInt(r.metrics?.clicks || 0),
-      ctr: parseFloat(r.metrics?.ctr || 0) * 100,
-      cpc: r.metrics?.averageCpc ? parseInt(r.metrics.averageCpc) / 1000000 : 0,
-      revenue: parseFloat(r.metrics?.conversionsValue || 0),
-      conversions: parseFloat(r.metrics?.conversions || 0),
-    }));
-    res.json({ data: daily });
-  } catch (error) {
-    res.status(500).json({ error: error.response?.data?.error?.message || error.message });
-  }
+    const token = await getSnapToken();
+    const adAccountId = SNAP_AD_ACCOUNT_ID;
+    // Get campaigns
+    const campRes = await axios.get(
+      `https://adsapi.snapchat.com/v1/adaccounts/${adAccountId}/campaigns`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    const campaigns = (campRes.data.campaigns || []).map(c => c.campaign);
+    // Get stats for each campaign
+    const dr = snapDateRange(date_preset, date_since, date_until);
+    const statsRes = await axios.get(
+      `https://adsapi.snapchat.com/v1/adaccounts/${adAccountId}/stats`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+        params: {
+          granularity: 'TOTAL', fields: 'impressions,swipes,spend,video_views,conversion_purchases,conversion_purchases_value',
+          start_time: dr.start_time, end_time: dr.end_time, breakdown: 'campaign',
+        }
+      }
+    );
+    const statsMap = {};
+    (statsRes.data.total_stats || []).forEach(s => {
+      const id = s.breakdown_stats?.campaign?.id;
+      if (id) statsMap[id] = s.total_stat?.stats || {};
+    });
+    const data = campaigns.map(c => {
+      const s = statsMap[c.id] || {};
+      const spend = (s.spend || 0) / 1e6;
+      const revenue = s.conversion_purchases_value || 0;
+      const clicks = s.swipes || 0;
+      const impressions = s.impressions || 0;
+      return {
+        id: c.id, name: c.name, status: c.status,
+        daily_budget: c.daily_budget_micro ? c.daily_budget_micro / 1e6 : null,
+        spend, impressions, clicks,
+        ctr: impressions > 0 ? clicks / impressions * 100 : 0,
+        cpc: clicks > 0 ? spend / clicks : 0,
+        cpm: impressions > 0 ? spend / impressions * 1000 : 0,
+        conversions: s.conversion_purchases || 0,
+        revenue, roas: revenue > 0 && spend > 0 ? revenue / spend : null,
+        platform: 'snapchat',
+      };
+    });
+    res.json({ data });
+  } catch (e) { console.error('Snap campaigns:', e.response?.data || e.message); res.status(500).json({ error: e.message, data: [] }); }
 });
 
-// Combined dashboard endpoint — Meta + Google together
-app.get('/api/combined', async (req, res) => {
-  const { date_preset = 'last_30d', date_since, date_until } = req.query;
-  const results = { meta: null, google: null, errors: {} };
-  await Promise.allSettled([
-    // Meta
-    (async () => {
-      const params = { access_token: META_ACCESS_TOKEN, fields: 'campaign_id,campaign_name,spend,impressions,clicks,ctr,cpc,cpm,reach,frequency,actions,action_values,purchase_roas', level: 'campaign', limit: 100 };
-      if (date_since && date_until) params.time_range = JSON.stringify({ since: date_since, until: date_until });
-      else params.date_preset = date_preset !== 'custom' ? date_preset : 'last_30d';
-      const r = await axios.get(`https://graph.facebook.com/v19.0/act_${getMetaAccountId()}/insights`, { params });
-      results.meta = (r.data.data || []).map(row => {
-        const spend = parseFloat(row.spend || 0);
-        const nativeRoas = row.purchase_roas?.[0]?.value ? parseFloat(row.purchase_roas[0].value) : null;
-        const pv = (row.action_values || []).find(a => a.action_type === 'purchase')?.value;
-        const roas = nativeRoas || (pv && spend > 0 ? parseFloat(pv) / spend : null);
-        const revenue = pv ? parseFloat(pv) : nativeRoas && spend > 0 ? nativeRoas * spend : null;
-        return { ...row, roas, revenue, platform: 'meta' };
-      });
-    })(),
-    // Google
-    (async () => {
-      const dateRange = buildGoogleDateRange(date_preset, date_since, date_until);
-      const query = `SELECT campaign.id,campaign.name,campaign.status,campaign.advertising_channel_type,campaign_budget.amount_micros,metrics.cost_micros,metrics.impressions,metrics.clicks,metrics.ctr,metrics.average_cpc,metrics.average_cpm,metrics.conversions,metrics.conversions_value FROM campaign WHERE segments.date ${dateRange} AND campaign.status != 'REMOVED' ORDER BY metrics.cost_micros DESC LIMIT 100`;
-      const gResults = await runGoogleQuery(query);
-      results.google = gResults.map(r => ({
-        id: r.campaign?.id,
-        campaign_id: r.campaign?.id,
-        campaign_name: r.campaign?.name,
-        name: r.campaign?.name,
-        status: r.campaign?.status,
-        channel: r.campaign?.advertisingChannelType,
-        daily_budget: r.campaignBudget?.amountMicros ? parseInt(r.campaignBudget.amountMicros) / 1000000 : null,
-        spend: r.metrics?.costMicros ? parseInt(r.metrics.costMicros) / 1000000 : 0,
-        impressions: parseInt(r.metrics?.impressions || 0),
-        clicks: parseInt(r.metrics?.clicks || 0),
-        ctr: parseFloat(r.metrics?.ctr || 0) * 100,
-        cpc: r.metrics?.averageCpc ? parseInt(r.metrics.averageCpc) / 1000000 : 0,
-        cpm: r.metrics?.averageCpm ? parseInt(r.metrics.averageCpm) / 1000000 : 0,
-        conversions: parseFloat(r.metrics?.conversions || 0),
-        revenue: parseFloat(r.metrics?.conversionsValue || 0),
-        roas: r.metrics?.conversionsValue && r.metrics?.costMicros && parseInt(r.metrics.costMicros) > 0
-          ? parseFloat(r.metrics.conversionsValue) / (parseInt(r.metrics.costMicros) / 1000000) : null,
-        platform: 'google',
-      }));
-    })(),
-  ]);
-  res.json(results);
+app.get('/api/snapchat/insights', async (req, res) => {
+  try {
+    const { date_preset, date_since, date_until } = req.query;
+    const token = await getSnapToken();
+    const dr = snapDateRange(date_preset, date_since, date_until);
+    const r = await axios.get(
+      `https://adsapi.snapchat.com/v1/adaccounts/${SNAP_AD_ACCOUNT_ID}/stats`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+        params: {
+          granularity: 'TOTAL', fields: 'impressions,swipes,spend,video_views,conversion_purchases,conversion_purchases_value',
+          start_time: dr.start_time, end_time: dr.end_time,
+        }
+      }
+    );
+    const s = r.data.total_stats?.[0]?.total_stat?.stats || {};
+    const spend = (s.spend || 0) / 1e6;
+    const revenue = s.conversion_purchases_value || 0;
+    const clicks = s.swipes || 0;
+    const impressions = s.impressions || 0;
+    res.json({ data: {
+      spend, revenue, impressions, clicks,
+      ctr: impressions > 0 ? clicks / impressions * 100 : 0,
+      cpc: clicks > 0 ? spend / clicks : 0,
+      cpm: impressions > 0 ? spend / impressions * 1000 : 0,
+      conversions: s.conversion_purchases || 0,
+      roas: revenue > 0 && spend > 0 ? revenue / spend : null,
+    }});
+  } catch (e) { console.error('Snap insights:', e.response?.data || e.message); res.status(500).json({ error: e.message, data: null }); }
 });
 
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => console.log(`Reprise Ads Backend v4 — Meta + Google running on port ${PORT}`));
+app.listen(PORT, () => console.log(`Reprise Ads v5 — Meta + Google + Snapchat on port ${PORT}`));
