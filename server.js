@@ -341,5 +341,119 @@ app.get('/api/snapchat/insights', async (req, res) => {
   } catch (e) { console.error('Snap insights:', e.response?.data || e.message); res.status(500).json({ error: e.message, data: null }); }
 });
 
+
+// ── AI AGENT ─────────────────────────────────────────────────
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+const agentReports = [];
+let agentRunning = false;
+
+const AGENT_SYSTEM_PROMPT = `You are JARVIS — Reprise's elite paid growth AI for an Indian D2C clothing brand.
+You are running your DAILY AUTONOMOUS ANALYSIS. Be surgical and specific.
+Structure your report EXACTLY like this:
+
+🔴 CRITICAL ALERTS
+[campaigns burning money, ROAS crashes, frequency spikes — use actual campaign names]
+
+📊 DAILY PERFORMANCE SUMMARY
+[spend, revenue, ROAS, top 3 performers, worst 3 performers]
+
+⚡ TOP 3 ACTIONS FOR TODAY
+[specific — campaign names, exact budget changes, pause/scale decisions]
+
+🧪 PATTERN DETECTED
+[trend across campaigns — creative fatigue, audience saturation, opportunity]
+
+💰 BUDGET COMMAND
+[how to reallocate budget today for maximum ROAS]
+
+Use actual numbers. Be sharp. No fluff.`;
+
+async function runDailyAgent() {
+  if (agentRunning) return;
+  agentRunning = true;
+  console.log('🤖 JARVIS Agent — daily analysis starting...');
+  try {
+    const params = {
+      access_token: META_ACCESS_TOKEN,
+      fields: 'campaign_id,campaign_name,spend,impressions,clicks,ctr,cpc,cpm,reach,frequency,actions,action_values,purchase_roas',
+      level: 'campaign', limit: 100, date_preset: 'last_7d',
+    };
+    const metaRes = await axios.get(`https://graph.facebook.com/v19.0/act_${getMetaId()}/insights`, { params });
+    const campaigns = (metaRes.data.data || []).map(row => {
+      const spend = parseFloat(row.spend || 0);
+      const nr = row.purchase_roas?.[0]?.value ? parseFloat(row.purchase_roas[0].value) : null;
+      const pv = (row.action_values || []).find(a => a.action_type === 'purchase')?.value;
+      const roas = nr || (pv && spend > 0 ? parseFloat(pv) / spend : null);
+      const revenue = pv ? parseFloat(pv) : nr && spend > 0 ? nr * spend : null;
+      return { ...row, roas, revenue };
+    });
+    const totalSpend = campaigns.reduce((a, c) => a + parseFloat(c.spend || 0), 0);
+    const totalRevenue = campaigns.reduce((a, c) => a + (c.revenue || 0), 0);
+    const blendedRoas = totalRevenue > 0 && totalSpend > 0 ? totalRevenue / totalSpend : null;
+    const totalClicks = campaigns.reduce((a, c) => a + parseInt(c.clicks || 0), 0);
+    const totalImpressions = campaigns.reduce((a, c) => a + parseInt(c.impressions || 0), 0);
+    const stars = campaigns.filter(c => c.roas >= 3).sort((a, b) => b.roas - a.roas);
+    const burning = campaigns.filter(c => c.roas && c.roas < 1 && parseFloat(c.spend) > 300);
+    const highFreq = campaigns.filter(c => parseFloat(c.frequency || 0) > 4);
+
+    const dataCtx = `REPRISE META DATA — LAST 7 DAYS (${new Date().toDateString()})
+
+ACCOUNT: Spend ₹${totalSpend.toFixed(0)} | Revenue ₹${totalRevenue.toFixed(0)} | ROAS ${blendedRoas ? blendedRoas.toFixed(2)+'x' : 'N/A'} | CTR ${totalImpressions>0?(totalClicks/totalImpressions*100).toFixed(2):0}% | ${campaigns.length} campaigns
+
+STARS (ROAS ≥ 3x): ${stars.length}
+${stars.slice(0,5).map(c=>`- ${c.campaign_name}: ${c.roas.toFixed(2)}x ROAS | ₹${parseFloat(c.spend).toFixed(0)} spend`).join('\n')||'None'}
+
+BURNING (ROAS < 1x, spend >₹300): ${burning.length}
+${burning.slice(0,8).map(c=>`- ${c.campaign_name}: ${c.roas.toFixed(2)}x ROAS | ₹${parseFloat(c.spend).toFixed(0)} wasted`).join('\n')||'None'}
+
+HIGH FREQUENCY (>4): ${highFreq.length}
+${highFreq.slice(0,5).map(c=>`- ${c.campaign_name}: freq ${parseFloat(c.frequency).toFixed(1)} | ₹${parseFloat(c.spend).toFixed(0)}`).join('\n')||'None'}
+
+ALL CAMPAIGNS (top 20 by spend):
+${campaigns.sort((a,b)=>parseFloat(b.spend)-parseFloat(a.spend)).slice(0,20).map(c=>`- ${c.campaign_name}: ₹${parseFloat(c.spend).toFixed(0)} | ROAS ${c.roas?c.roas.toFixed(2)+'x':'N/A'} | CTR ${parseFloat(c.ctr||0).toFixed(2)}% | Freq ${parseFloat(c.frequency||0).toFixed(1)}`).join('\n')}`;
+
+    const claudeRes = await axios.post('https://api.anthropic.com/v1/messages',
+      { model: 'claude-sonnet-4-20250514', max_tokens: 1500, system: AGENT_SYSTEM_PROMPT, messages: [{ role: 'user', content: dataCtx }] },
+      { headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' } }
+    );
+    const analysis = claudeRes.data.content?.find(b => b.type === 'text')?.text || 'Analysis failed.';
+    const report = {
+      id: Date.now(), timestamp: new Date().toISOString(), date: new Date().toDateString(),
+      analysis,
+      summary: { totalSpend: totalSpend.toFixed(0), totalRevenue: totalRevenue.toFixed(0), blendedRoas: blendedRoas?blendedRoas.toFixed(2):null, campaignCount: campaigns.length, starsCount: stars.length, burningCount: burning.length, highFreqCount: highFreq.length }
+    };
+    agentReports.unshift(report);
+    if (agentReports.length > 7) agentReports.pop();
+    console.log(`✅ JARVIS Agent done — ROAS ${blendedRoas?blendedRoas.toFixed(2)+'x':'N/A'} | ${burning.length} burning campaigns`);
+  } catch(e) {
+    console.error('Agent error:', e.response?.data || e.message);
+    agentReports.unshift({ id: Date.now(), timestamp: new Date().toISOString(), date: new Date().toDateString(), analysis: `Agent error: ${e.message}`, summary: null, error: true });
+  } finally { agentRunning = false; }
+}
+
+app.get('/api/agent/latest', (req, res) => res.json({ report: agentReports[0] || null }));
+app.get('/api/agent/history', (req, res) => res.json({ reports: agentReports }));
+app.get('/api/agent/status', (req, res) => res.json({ running: agentRunning, reportsCount: agentReports.length, lastRun: agentReports[0]?.timestamp || null }));
+app.post('/api/agent/run', (req, res) => {
+  if (agentRunning) return res.json({ message: 'Already running...', running: true });
+  runDailyAgent();
+  res.json({ message: 'Agent triggered. Check /api/agent/latest in ~15 seconds.', running: true });
+});
+
+// Schedule 8AM IST (2:30 UTC) daily
+function scheduleAgent() {
+  const now = new Date();
+  const next = new Date();
+  next.setUTCHours(2, 30, 0, 0);
+  if (next <= now) next.setUTCDate(next.getUTCDate() + 1);
+  const ms = next - now;
+  console.log(`🕐 JARVIS Agent — next run in ${Math.round(ms/60000)} minutes (8:00 IST)`);
+  setTimeout(() => { runDailyAgent(); setInterval(runDailyAgent, 24*60*60*1000); }, ms);
+}
+
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => console.log(`Reprise Ads v5 — Meta + Google + Snapchat on port ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`Reprise Ads v6 — Meta + Google + Snapchat + AI Agent on port ${PORT}`);
+  scheduleAgent();
+  if (ANTHROPIC_API_KEY) { setTimeout(runDailyAgent, 8000); }
+});
