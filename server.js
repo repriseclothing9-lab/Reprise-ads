@@ -40,6 +40,21 @@ app.get('/debug', (req, res) => {
   });
 });
 
+// ── CHAT PROXY — routes frontend AI calls through backend ────
+app.post('/api/chat', async (req, res) => {
+  try {
+    const { system, messages } = req.body;
+    const r = await axios.post('https://api.anthropic.com/v1/messages',
+      { model: 'claude-sonnet-4-20250514', max_tokens: 1000, system, messages },
+      { headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' } }
+    );
+    res.json(r.data);
+  } catch(e) {
+    console.error('Chat proxy error:', e.response?.data || e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Snapchat OAuth — Step 1: redirect to Snapchat login
 app.get('/snap-auth', (req, res) => {
   const url = `https://accounts.snapchat.com/login/oauth2/authorize?client_id=${SNAP_CLIENT_ID}&redirect_uri=https://reprise-ads.onrender.com/snap-callback&response_type=code&scope=snapchat-marketing-api`;
