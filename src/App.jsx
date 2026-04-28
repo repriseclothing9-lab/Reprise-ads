@@ -691,6 +691,103 @@ export default function App(){
         </div>}
       </div>
 
+        {tab==="agent"&&<div>
+          {/* AGENT HEADER */}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+            <div>
+              <div style={{fontSize:16,fontWeight:900,color:J.cyan,fontFamily:"monospace",letterSpacing:2,textShadow:J.cyanGlow}}>⚡ J.A.R.V.I.S DAILY AGENT</div>
+              <div style={{fontSize:10,color:J.muted,fontFamily:"monospace",marginTop:4}}>
+                {agentStatus?`Last run: ${agentStatus.lastRun?new Date(agentStatus.lastRun).toLocaleString('en-IN'):"Never"} · ${agentStatus.reportsCount} reports stored · Next: 8:00 AM IST`:"Loading status..."}
+              </div>
+            </div>
+            <button onClick={triggerAgent} disabled={agentRunning}
+              style={{padding:"10px 24px",background:agentRunning?J.yellow+"22":J.cyan+"22",border:`1px solid ${agentRunning?J.yellow:J.cyan}`,borderRadius:3,color:agentRunning?J.yellow:J.cyan,fontSize:11,cursor:agentRunning?"not-allowed":"pointer",fontFamily:"monospace",letterSpacing:1.5,fontWeight:700,boxShadow:agentRunning?`0 0 10px ${J.yellow}44`:J.cyanGlow,transition:"all .3s"}}>
+              {agentRunning?"🤖 ANALYSING...":"▶ RUN NOW"}
+            </button>
+          </div>
+
+          {/* HOW IT WORKS */}
+          {!agentReport&&!agentRunning&&<JCard style={{padding:24,marginBottom:16,textAlign:"center"}} glow>
+            <div style={{fontSize:40,marginBottom:12}}>🤖</div>
+            <div style={{fontSize:14,color:J.cyan,fontFamily:"monospace",fontWeight:700,marginBottom:8,textShadow:J.cyanGlowSm}}>AGENT NOT YET RUN</div>
+            <div style={{fontSize:11,color:J.muted,fontFamily:"monospace",lineHeight:1.8,marginBottom:16}}>
+              JARVIS Agent runs automatically every day at 8:00 AM IST.<br/>
+              It fetches all your campaign data, analyses it with AI,<br/>
+              and stores the report here — no action needed from you.
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:16}}>
+              {[["📊","Fetches live Meta data","Every morning 8AM"],["🧠","AI analysis via Claude","Full campaign audit"],["🔴","Flags burning campaigns","Pause recommendations"],["⭐","Identifies stars to scale","Budget commands"]].map(([icon,title,sub])=>(
+                <div key={title} style={{padding:"12px 8px",background:J.cyan+"0A",border:`1px solid ${J.border}`,borderRadius:3}}>
+                  <div style={{fontSize:20,marginBottom:6}}>{icon}</div>
+                  <div style={{fontSize:10,color:J.cyan,fontFamily:"monospace",fontWeight:700,marginBottom:4}}>{title}</div>
+                  <div style={{fontSize:9,color:J.muted,fontFamily:"monospace"}}>{sub}</div>
+                </div>
+              ))}
+            </div>
+            <button onClick={triggerAgent} style={{padding:"12px 32px",background:J.cyan+"22",border:`1px solid ${J.cyan}`,borderRadius:3,color:J.cyan,fontSize:12,cursor:"pointer",fontFamily:"monospace",letterSpacing:2,fontWeight:700,boxShadow:J.cyanGlow}}>
+              ▶ RUN FIRST ANALYSIS NOW
+            </button>
+          </JCard>}
+
+          {/* RUNNING STATE */}
+          {agentRunning&&<JCard style={{padding:40,textAlign:"center",marginBottom:16}} glow>
+            <div style={{fontSize:11,color:J.yellow,fontFamily:"monospace",letterSpacing:2,marginBottom:16,animation:"pulse 2s infinite"}}>🤖 JARVIS AGENT ANALYSING YOUR CAMPAIGNS...</div>
+            <div style={{display:"flex",gap:8,justifyContent:"center",marginBottom:12}}>
+              {[0,1,2,3,4].map(i=><div key={i} style={{width:8,height:8,borderRadius:"50%",background:J.cyan,animation:"blink 1s infinite",animationDelay:`${i*.2}s`}}/>)}
+            </div>
+            <div style={{fontSize:10,color:J.muted,fontFamily:"monospace"}}>Fetching campaign data → Analysing with Claude → Generating report</div>
+          </JCard>}
+
+          {/* LATEST REPORT */}
+          {agentReport&&<JCard style={{padding:20,marginBottom:16}} glow>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+              <div>
+                <div style={{fontSize:9,color:J.cyan,letterSpacing:2,fontFamily:"monospace",textShadow:J.cyanGlowSm}}>◈ LATEST REPORT</div>
+                <div style={{fontSize:11,color:J.muted,fontFamily:"monospace",marginTop:4}}>{new Date(agentReport.timestamp).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div>
+              </div>
+              {agentReport.summary&&<div style={{display:"flex",gap:10}}>
+                {[["SPEND",`₹${parseInt(agentReport.summary.totalSpend).toLocaleString()}`,J.cyan],["REVENUE",`₹${parseInt(agentReport.summary.totalRevenue).toLocaleString()}`,J.purple],["ROAS",agentReport.summary.blendedRoas?`${agentReport.summary.blendedRoas}x`:"N/A",agentReport.summary.blendedRoas>=3?J.green:agentReport.summary.blendedRoas>=2?J.yellow:J.red],["🔴 BURNING",agentReport.summary.burningCount,J.red],["⭐ STARS",agentReport.summary.starsCount,J.green]].map(([l,v,c])=>(
+                  <div key={l} style={{textAlign:"center",padding:"8px 12px",background:c+"0A",border:`1px solid ${c}22`,borderRadius:2}}>
+                    <div style={{fontSize:14,fontWeight:900,color:c,fontFamily:"monospace"}}>{v}</div>
+                    <div style={{fontSize:7,color:J.muted,letterSpacing:1.5,marginTop:2}}>{l}</div>
+                  </div>
+                ))}
+              </div>}
+            </div>
+            {/* Analysis text */}
+            <div style={{background:J.bg,border:`1px solid ${J.border}`,borderRadius:3,padding:16}}>
+              {agentReport.analysis.split("\n").map((line,i)=>{
+                if(/^(🔴|📊|⚡|🧪|💰)/.test(line))return<div key={i} style={{color:J.cyan,fontWeight:800,fontSize:12,marginTop:16,marginBottom:6,fontFamily:"monospace",textShadow:J.cyanGlowSm,borderBottom:`1px solid ${J.border}`,paddingBottom:4}}>{line}</div>;
+                if(line.startsWith("- "))return<div key={i} style={{paddingLeft:16,fontSize:11,color:"#8AB8CC",fontFamily:"monospace",marginBottom:3,lineHeight:1.7}}><span style={{color:J.cyan}}>›</span> {line.slice(2)}</div>;
+                if(line.trim()==="")return<div key={i} style={{height:6}}/>;
+                return<div key={i} style={{fontSize:11,color:J.text,fontFamily:"monospace",lineHeight:1.7,marginBottom:2}}>{line}</div>;
+              })}
+            </div>
+          </JCard>}
+
+          {/* HISTORY */}
+          {agentHistory.length>1&&<JCard style={{padding:0,overflow:"hidden"}} glow>
+            <div style={{padding:"12px 16px",borderBottom:`1px solid ${J.border}`}}>
+              <div style={{fontSize:9,color:J.cyan,letterSpacing:2,fontFamily:"monospace",textShadow:J.cyanGlowSm}}>◈ REPORT HISTORY — LAST {agentHistory.length} DAYS</div>
+            </div>
+            {agentHistory.slice(1).map((r,i)=>(
+              <div key={i} style={{padding:"12px 16px",borderBottom:`1px solid ${J.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div>
+                  <div style={{fontSize:10,color:J.text,fontFamily:"monospace"}}>{r.date}</div>
+                  <div style={{fontSize:9,color:J.muted,fontFamily:"monospace",marginTop:2}}>{new Date(r.timestamp).toLocaleTimeString('en-IN')}</div>
+                </div>
+                {r.summary&&<div style={{display:"flex",gap:8}}>
+                  <span style={{fontSize:10,color:J.cyan,fontFamily:"monospace"}}>₹{parseInt(r.summary.totalSpend).toLocaleString()}</span>
+                  <span style={{fontSize:10,color:r.summary.blendedRoas>=2?J.green:J.red,fontFamily:"monospace",fontWeight:700}}>{r.summary.blendedRoas?r.summary.blendedRoas+"x":"N/A"}</span>
+                  <span style={{fontSize:9,color:J.red,fontFamily:"monospace"}}>🔴 {r.summary.burningCount}</span>
+                  <span style={{fontSize:9,color:J.green,fontFamily:"monospace"}}>⭐ {r.summary.starsCount}</span>
+                </div>}
+                {r.error&&<span style={{fontSize:9,color:J.red,fontFamily:"monospace"}}>ERROR</span>}
+              </div>
+            ))}
+          </JCard>}
+        </div>}
+
       {/* BOTTOM BAR */}
       <div style={{position:"fixed",bottom:0,left:0,right:aiOpen?370:0,background:J.bg+"F0",borderTop:`1px solid ${J.border}`,padding:"5px 24px",display:"flex",alignItems:"center",gap:12,zIndex:40,backdropFilter:"blur(10px)",transition:"right .3s"}}>
         <div style={{position:"absolute",top:0,left:0,right:0,height:1,background:`linear-gradient(90deg,transparent,${J.cyan}44,transparent)`}}/>
