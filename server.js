@@ -93,12 +93,25 @@ function googleDateRange(preset, since, until) {
 async function googleQuery(query) {
   const token = await getGoogleToken();
   const cid = (GOOGLE_CUSTOMER_ID || '').replace(/-/g, '');
-  const r = await axios.post(
-    `https://googleads.googleapis.com/v17/customers/${cid}/googleAds:search`,
-    { query },
-    { headers: { Authorization: `Bearer ${token}`, 'developer-token': GOOGLE_DEVELOPER_TOKEN, 'Content-Type': 'application/json' } }
-  );
-  return r.data.results || [];
+  const loginCid = (process.env.GOOGLE_LOGIN_CUSTOMER_ID || GOOGLE_CUSTOMER_ID || '').replace(/-/g, '');
+  console.log('Google query — cid:', cid, 'login-cid:', loginCid);
+  try {
+    const r = await axios.post(
+      `https://googleads.googleapis.com/v16/customers/${cid}/googleAds:search`,
+      { query },
+      { headers: {
+          'Authorization': `Bearer ${token}`,
+          'developer-token': GOOGLE_DEVELOPER_TOKEN,
+          'login-customer-id': loginCid,
+          'Content-Type': 'application/json'
+      }}
+    );
+    return r.data.results || [];
+  } catch(e) {
+    const errData = e.response?.data;
+    console.error('Google query detail:', JSON.stringify(errData || e.message).slice(0, 500));
+    throw e;
+  }
 }
 
 // ── SNAPCHAT HELPERS ──────────────────────────────────────────
