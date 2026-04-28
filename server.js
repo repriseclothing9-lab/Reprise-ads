@@ -23,6 +23,56 @@ const getMetaId = () => (META_AD_ACCOUNT_ID || '').replace('act_', '');
 
 app.get('/ping', (req, res) => res.send('OK'));
 
+// Debug — check env vars are loaded (safe, only shows first 10 chars)
+app.get('/debug', (req, res) => {
+  res.json({
+    meta_token: META_ACCESS_TOKEN ? META_ACCESS_TOKEN.slice(0,10)+'...' : 'MISSING',
+    meta_account: META_AD_ACCOUNT_ID || 'MISSING',
+    google_dev_token: GOOGLE_DEVELOPER_TOKEN ? GOOGLE_DEVELOPER_TOKEN.slice(0,8)+'...' : 'MISSING',
+    google_customer_id: GOOGLE_CUSTOMER_ID || 'MISSING',
+    google_client_id: GOOGLE_CLIENT_ID ? GOOGLE_CLIENT_ID.slice(0,20)+'...' : 'MISSING',
+    google_client_secret: GOOGLE_CLIENT_SECRET ? GOOGLE_CLIENT_SECRET.slice(0,8)+'...' : 'MISSING',
+    google_refresh_token: GOOGLE_REFRESH_TOKEN ? GOOGLE_REFRESH_TOKEN.slice(0,15)+'...' : 'MISSING',
+    snap_client_id: SNAP_CLIENT_ID ? SNAP_CLIENT_ID.slice(0,8)+'...' : 'MISSING',
+    snap_client_secret: SNAP_CLIENT_SECRET ? SNAP_CLIENT_SECRET.slice(0,8)+'...' : 'MISSING',
+    snap_refresh_token: SNAP_REFRESH_TOKEN ? SNAP_REFRESH_TOKEN.slice(0,15)+'...' : 'MISSING',
+    snap_ad_account_id: SNAP_AD_ACCOUNT_ID || 'MISSING',
+  });
+});
+
+// Snapchat OAuth — Step 1: redirect to Snapchat login
+app.get('/snap-auth', (req, res) => {
+  const url = `https://accounts.snapchat.com/login/oauth2/authorize?client_id=${SNAP_CLIENT_ID}&redirect_uri=https://reprise-ads.onrender.com/snap-callback&response_type=code&scope=snapchat-marketing-api`;
+  res.redirect(url);
+});
+
+// Snapchat OAuth — Step 2: exchange code for refresh token
+app.get('/snap-callback', async (req, res) => {
+  const { code } = req.query;
+  if (!code) return res.send('No code received');
+  try {
+    const r = await axios.post('https://accounts.snapchat.com/login/oauth2/access_token',
+      new URLSearchParams({
+        client_id: SNAP_CLIENT_ID,
+        client_secret: SNAP_CLIENT_SECRET,
+        code,
+        redirect_uri: 'https://reprise-ads.onrender.com/snap-callback',
+        grant_type: 'authorization_code',
+      }),
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+    );
+    const { access_token, refresh_token, expires_in } = r.data;
+    res.send(`
+      <h2>✅ Snapchat Connected!</h2>
+      <p><b>Add this to Render as SNAP_REFRESH_TOKEN:</b></p>
+      <textarea rows="3" cols="80" onclick="this.select()">${refresh_token}</textarea>
+      <p>Access token (expires in ${expires_in}s): ${access_token?.slice(0,30)}...</p>
+    `);
+  } catch (e) {
+    res.send(`Error: ${JSON.stringify(e.response?.data || e.message)}`);
+  }
+});
+
 // ── GOOGLE HELPERS ────────────────────────────────────────────
 async function getGoogleToken() {
   const r = await axios.post('https://oauth2.googleapis.com/token', {
