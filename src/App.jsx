@@ -6,10 +6,11 @@ const J = {
   bg:"#020914",bg2:"#040D1A",cyan:"#00D4FF",
   cyanGlow:"0 0 10px #00D4FF,0 0 20px #00D4FF44",cyanGlowSm:"0 0 6px #00D4FF88",
   orange:"#FF6B35",green:"#00FF88",red:"#FF3366",yellow:"#FFD700",purple:"#B06EFF",
-  google:"#4E9EFF",meta:"#00D4FF",
+  meta:"#00D4FF",google:"#4E9EFF",snap:"#FFFC00",
   border:"#00D4FF18",borderBright:"#00D4FF55",text:"#E0F4FF",muted:"#3A7A94",grid:"#00D4FF06",
 };
-const SYSTEM_PROMPT=`You are JARVIS — Reprise's elite paid growth AI for an Indian D2C clothing brand. You have Meta AND Google Ads data. Respond: 🔍 DIAGNOSIS → ⚡ THREAT → 🎯 ACTION → 🧪 EXPERIMENT → 📊 MONITOR → 💰 COMMAND. Sharp, decisive, occasional dry wit.`;
+const PLATFORMS = { meta: J.meta, google: J.google, snapchat: J.snap };
+const SYSTEM_PROMPT=`You are JARVIS — Reprise's elite paid growth AI for an Indian D2C clothing brand. You have Meta, Google AND Snapchat Ads data. Respond: 🔍 DIAGNOSIS → ⚡ THREAT → 🎯 ACTION → 🧪 EXPERIMENT → 📊 MONITOR → 💰 COMMAND. Sharp, decisive, occasional dry wit.`;
 const DATE_PRESETS=[{label:"TODAY",value:"today"},{label:"7D",value:"last_7d"},{label:"14D",value:"last_14d"},{label:"30D",value:"last_30d"},{label:"60D",value:"last_60d"},{label:"90D",value:"last_90d"},{label:"CUSTOM",value:"custom"}];
 const fmt=n=>n>=100000?`₹${(n/100000).toFixed(1)}L`:n>=1000?`₹${(n/1000).toFixed(1)}K`:`₹${Math.round(n||0)}`;
 const fmtN=n=>n>=1000000?`${(n/1000000).toFixed(1)}M`:n>=1000?`${(n/1000).toFixed(1)}K`:`${n||0}`;
@@ -59,10 +60,10 @@ const JCard=({children,style={},glow=false,accent=J.cyan})=>(
   </div>
 );
 
-const PlatformTag=({platform})=>{
-  const isGoogle=platform==="google";
-  const c=isGoogle?J.google:J.meta;
-  return<span style={{padding:"1px 7px",borderRadius:2,fontSize:7,fontWeight:700,fontFamily:"monospace",letterSpacing:1,background:c+"18",color:c,border:`1px solid ${c}33`}}>{isGoogle?"GOOGLE":"META"}</span>;
+const PTag=({p})=>{
+  const c=PLATFORMS[p]||J.cyan;
+  const l={meta:"META",google:"GOOGLE",snapchat:"SNAP"}[p]||p.toUpperCase();
+  return<span style={{padding:"1px 7px",borderRadius:2,fontSize:7,fontWeight:700,fontFamily:"monospace",letterSpacing:1,background:c+"18",color:c,border:`1px solid ${c}33`}}>{l}</span>;
 };
 
 const RoasBadge=({roas})=>{
@@ -95,26 +96,37 @@ function DateRangePicker({activePreset,onSelect,dateSince,setDateSince,dateUntil
   );
 }
 
-// PLATFORM CARD — shows Meta or Google summary
 function PlatformCard({platform,data,loading}){
-  const isGoogle=platform==="google";
-  const c=isGoogle?J.google:J.meta;
-  const icon=isGoogle?"G":"f";
-  const label=isGoogle?"GOOGLE ADS":"META ADS";
-  if(loading)return<JCard style={{padding:18}} glow accent={c}><div style={{fontSize:9,color:c,letterSpacing:2,fontFamily:"monospace",marginBottom:12}}>◈ {label}</div><div style={{textAlign:"center",padding:20,color:J.muted,fontFamily:"monospace",fontSize:10}}>SYNCING...</div></JCard>;
-  if(!data)return<JCard style={{padding:18}} glow accent={c}><div style={{fontSize:9,color:c,letterSpacing:2,fontFamily:"monospace",marginBottom:12}}>◈ {label}</div><div style={{textAlign:"center",padding:20,color:J.red,fontFamily:"monospace",fontSize:10}}>NOT CONNECTED</div></JCard>;
-  const spend=isGoogle?data.spend:data.reduce((a,i)=>a+parseFloat(i.spend||0),0);
-  const revenue=isGoogle?data.conversion_value:(data.reduce((a,i)=>a+(i.revenue||0),0));
-  const roas=isGoogle?data.roas:(spend>0&&revenue>0?revenue/spend:null);
-  const impressions=isGoogle?data.impressions:data.reduce((a,i)=>a+parseInt(i.impressions||0),0);
-  const clicks=isGoogle?data.clicks:data.reduce((a,i)=>a+parseInt(i.clicks||0),0);
-  const ctr=isGoogle?data.ctr:(impressions>0?(clicks/impressions*100):0);
-  const cpc=isGoogle?data.cpc:(clicks>0?spend/clicks:0);
+  const c=PLATFORMS[platform]||J.cyan;
+  const labels={meta:"META ADS",google:"GOOGLE ADS",snapchat:"SNAPCHAT ADS"};
+  const icons={meta:"f",google:"G",snapchat:"👻"};
+  const label=labels[platform];
+  const icon=icons[platform];
+  if(loading)return(
+    <JCard style={{padding:18}} glow accent={c}>
+      <div style={{fontSize:9,color:c,letterSpacing:2,fontFamily:"monospace",marginBottom:12}}>◈ {label}</div>
+      <div style={{textAlign:"center",padding:20,color:J.muted,fontFamily:"monospace",fontSize:10,letterSpacing:2}}>SYNCING...</div>
+    </JCard>
+  );
+  const isArray=Array.isArray(data);
+  const spend=isArray?data.reduce((a,i)=>a+parseFloat(i.spend||0),0):data?.spend||0;
+  const revenue=isArray?data.reduce((a,i)=>a+(i.revenue||0),0):data?.revenue||data?.conversion_value||0;
+  const roas=isArray?(spend>0&&revenue>0?revenue/spend:null):data?.roas;
+  const impressions=isArray?data.reduce((a,i)=>a+parseInt(i.impressions||0),0):data?.impressions||0;
+  const clicks=isArray?data.reduce((a,i)=>a+parseInt(i.clicks||0),0):data?.clicks||0;
+  const ctr=isArray?(impressions>0?clicks/impressions*100:0):data?.ctr||0;
+  const cpc=isArray?(clicks>0?spend/clicks:0):data?.cpc||0;
+  if(!data)return(
+    <JCard style={{padding:18}} glow accent={c}>
+      <div style={{fontSize:9,color:c,letterSpacing:2,fontFamily:"monospace",marginBottom:12}}>◈ {label}</div>
+      <div style={{textAlign:"center",padding:20,color:J.red,fontFamily:"monospace",fontSize:10}}>NOT CONNECTED<br/><span style={{fontSize:9,color:J.muted,opacity:.7}}>Add credentials to Render</span></div>
+    </JCard>
+  );
   return(
     <JCard style={{padding:18}} glow accent={c}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
         <div style={{fontSize:9,color:c,letterSpacing:2,fontFamily:"monospace",textShadow:`0 0 6px ${c}88`}}>◈ {label}</div>
-        <div style={{width:28,height:28,borderRadius:"50%",background:c+"18",border:`1px solid ${c}44`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:900,color:c}}>{icon}</div>
+        <div style={{width:28,height:28,borderRadius:"50%",background:c+"18",border:`1px solid ${c}44`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:900,color:c}}>{icon}</div>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
         <div style={{padding:"8px 10px",background:c+"0A",border:`1px solid ${c}22`,borderRadius:2}}>
@@ -123,7 +135,7 @@ function PlatformCard({platform,data,loading}){
         </div>
         <div style={{padding:"8px 10px",background:roasColor(roas)+"0A",border:`1px solid ${roasColor(roas)}22`,borderRadius:2}}>
           <div style={{fontSize:7,color:J.muted,letterSpacing:1.5,fontFamily:"monospace",marginBottom:3}}>ROAS</div>
-          <div style={{fontSize:18,fontWeight:900,color:roasColor(roas),fontFamily:"monospace",textShadow:`0 0 10px ${roasColor(roas)}66`}}>{roas?`${roas.toFixed(2)}x`:"N/A"}</div>
+          <div style={{fontSize:18,fontWeight:900,color:roasColor(roas),fontFamily:"monospace"}}>{roas?`${roas.toFixed(2)}x`:"N/A"}</div>
         </div>
       </div>
       {[["REVENUE",revenue>0?fmt(revenue):"N/A",J.purple],["IMPRESSIONS",fmtN(impressions),J.muted],["CLICKS",fmtN(clicks),c],["CTR",`${parseFloat(ctr).toFixed(2)}%`,parseFloat(ctr)>=1?J.green:J.red],["CPC",`₹${parseFloat(cpc).toFixed(0)}`,J.yellow]].map(([l,v,col])=>(
@@ -136,13 +148,13 @@ function PlatformCard({platform,data,loading}){
   );
 }
 
-function CampaignDrawer({campaign,insights,googleCampaigns,datePreset,dateSince,dateUntil,onClose}){
+function CampaignDrawer({campaign,metaInsights,datePreset,dateSince,dateUntil,onClose}){
   const[sec,setSec]=useState("OVERVIEW");
   const[adsets,setAdsets]=useState([]);
   const[dailyData,setDailyData]=useState([]);
   const[loading,setLoading]=useState(true);
-  const isGoogle=campaign.platform==="google";
-  const ci=isGoogle?campaign:(insights.find(i=>i.campaign_id===campaign.id||i.campaign_name===campaign.name)||{});
+  const isMeta=campaign.platform==="meta";
+  const ci=isMeta?(metaInsights.find(i=>i.campaign_id===campaign.id||i.campaign_name===campaign.name)||{}):campaign;
   const spend=parseFloat(ci.spend||0),impressions=parseInt(ci.impressions||0),clicks=parseInt(ci.clicks||0);
   const ctr=parseFloat(ci.ctr||0),cpc=parseFloat(ci.cpc||0),cpm=parseFloat(ci.cpm||0);
   const reach=parseInt(ci.reach||0),freq=parseFloat(ci.frequency||0);
@@ -150,8 +162,9 @@ function CampaignDrawer({campaign,insights,googleCampaigns,datePreset,dateSince,
   const revenue=ci.revenue?parseFloat(ci.revenue):null;
   const purchases=(ci.actions||[]).find(a=>a.action_type==="purchase")?.value||0;
   const atc=(ci.actions||[]).find(a=>a.action_type==="add_to_cart")?.value||0;
+  const accentColor=PLATFORMS[campaign.platform]||J.cyan;
   useEffect(()=>{
-    if(isGoogle){setLoading(false);return;}
+    if(!isMeta){setLoading(false);return;}
     const p=buildParams(datePreset,dateSince,dateUntil);
     const go=async()=>{
       setLoading(true);
@@ -172,8 +185,7 @@ function CampaignDrawer({campaign,insights,googleCampaigns,datePreset,dateSince,
       }catch(e){console.log(e);}finally{setLoading(false);}
     };go();
   },[campaign.id,datePreset,dateSince,dateUntil]);
-  const SECS=isGoogle?["OVERVIEW"]:["OVERVIEW","DAILY","AD SETS"];
-  const accentColor=isGoogle?J.google:J.cyan;
+  const SECS=isMeta?["OVERVIEW","DAILY","AD SETS"]:["OVERVIEW"];
   return(
     <div style={{position:"fixed",inset:0,zIndex:200,display:"flex",justifyContent:"flex-end"}}>
       <div onClick={onClose} style={{position:"absolute",inset:0,background:"rgba(2,9,20,.85)",backdropFilter:"blur(4px)"}}/>
@@ -183,13 +195,11 @@ function CampaignDrawer({campaign,insights,googleCampaigns,datePreset,dateSince,
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
             <div style={{flex:1,paddingRight:16}}>
               <div style={{fontSize:9,color:J.muted,letterSpacing:2,fontFamily:"monospace",marginBottom:4,display:"flex",alignItems:"center",gap:8}}>
-                ◈ CAMPAIGN DETAIL <PlatformTag platform={isGoogle?"google":"meta"}/>
+                ◈ CAMPAIGN DETAIL <PTag p={campaign.platform}/>
               </div>
-              <div style={{fontSize:14,fontWeight:700,color:accentColor,fontFamily:"monospace",textShadow:`0 0 6px ${accentColor}88`,lineHeight:1.3}}>{campaign.name}</div>
+              <div style={{fontSize:14,fontWeight:700,color:accentColor,fontFamily:"monospace",textShadow:`0 0 6px ${accentColor}88`,lineHeight:1.3}}>{campaign.name||campaign.campaign_name}</div>
               <div style={{display:"flex",gap:8,marginTop:6,flexWrap:"wrap",alignItems:"center"}}>
-                <span style={{padding:"2px 8px",borderRadius:2,fontSize:8,fontFamily:"monospace",letterSpacing:1.5,background:campaign.status==="ACTIVE"||campaign.status==="ENABLED"?J.green+"18":J.muted+"18",color:campaign.status==="ACTIVE"||campaign.status==="ENABLED"?J.green:J.muted,border:`1px solid ${campaign.status==="ACTIVE"||campaign.status==="ENABLED"?J.green+"44":J.muted+"33"}`}}>{campaign.status}</span>
-                {!isGoogle&&<span style={{padding:"2px 8px",borderRadius:2,fontSize:8,fontFamily:"monospace",background:J.cyan+"11",color:J.cyan,border:`1px solid ${J.border}`}}>{campaign.objective?.replace("OUTCOME_","")||"—"}</span>}
-                {isGoogle&&<span style={{padding:"2px 8px",borderRadius:2,fontSize:8,fontFamily:"monospace",background:J.google+"11",color:J.google,border:`1px solid ${J.google}33`}}>{campaign.channel||"—"}</span>}
+                <span style={{padding:"2px 8px",borderRadius:2,fontSize:8,fontFamily:"monospace",background:J.green+"18",color:J.green,border:`1px solid ${J.green}44`}}>{campaign.status}</span>
                 {roas&&<RoasBadge roas={roas}/>}
               </div>
             </div>
@@ -204,31 +214,31 @@ function CampaignDrawer({campaign,insights,googleCampaigns,datePreset,dateSince,
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
               <JCard style={{padding:16}} glow accent={roasColor(roas)}>
                 <div style={{fontSize:9,color:J.muted,letterSpacing:2,fontFamily:"monospace",marginBottom:8}}>◈ ROAS</div>
-                <div style={{fontSize:36,fontWeight:900,color:roasColor(roas),fontFamily:"'Orbitron',monospace",textShadow:`0 0 20px ${roasColor(roas)}88`,letterSpacing:-1}}>{roas?`${parseFloat(roas).toFixed(2)}x`:"N/A"}</div>
+                <div style={{fontSize:36,fontWeight:900,color:roasColor(roas),fontFamily:"'Orbitron',monospace",letterSpacing:-1}}>{roas?`${parseFloat(roas).toFixed(2)}x`:"N/A"}</div>
                 <div style={{fontSize:10,color:J.muted,marginTop:4,fontFamily:"monospace"}}>{roas>=4?"EXCELLENT ✓":roas>=2.5?"GOOD":roas>=1?"BELOW TARGET":"NO CONV DATA"}</div>
               </JCard>
               <JCard style={{padding:16}} glow accent={J.purple}>
                 <div style={{fontSize:9,color:J.muted,letterSpacing:2,fontFamily:"monospace",marginBottom:8}}>◈ REVENUE</div>
-                <div style={{fontSize:36,fontWeight:900,color:J.purple,fontFamily:"'Orbitron',monospace",textShadow:`0 0 20px ${J.purple}88`,letterSpacing:-1}}>{revenue?fmt(revenue):"N/A"}</div>
+                <div style={{fontSize:36,fontWeight:900,color:J.purple,fontFamily:"'Orbitron',monospace",letterSpacing:-1}}>{revenue?fmt(revenue):"N/A"}</div>
                 <div style={{fontSize:10,color:J.muted,marginTop:4,fontFamily:"monospace"}}>{revenue&&spend>0?`Spend: ${fmt(spend)}`:"No conversions tracked"}</div>
               </JCard>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:16}}>
               {[["SPEND",fmt(spend),accentColor],["IMPRESSIONS",fmtN(impressions),J.muted],["CLICKS",fmtN(clicks),accentColor],
-                isGoogle?["CONVERSIONS",parseFloat(ci.conversions||0).toFixed(0),J.green]:["REACH",fmtN(reach),J.muted],
+                isMeta?["REACH",fmtN(reach),J.muted]:["CONVERSIONS",parseFloat(ci.conversions||0).toFixed(0),J.green],
                 ["CTR",`${ctr.toFixed(2)}%`,ctr>=1?J.green:J.red],["CPC",`₹${cpc.toFixed(0)}`,cpc<=20?J.green:cpc<=50?J.yellow:J.red],
                 ["CPM",`₹${cpm.toFixed(0)}`,J.muted],
-                isGoogle?["CONV VALUE",revenue?fmt(revenue):"N/A",J.purple]:["FREQUENCY",freq.toFixed(2),freq>4?J.red:freq>2?J.yellow:J.green]
+                isMeta?["FREQUENCY",freq.toFixed(2),freq>4?J.red:freq>2?J.yellow:J.green]:["CONV VALUE",revenue?fmt(revenue):"N/A",J.purple]
               ].map(([l,v,c])=>(
                 <JCard key={l} style={{padding:"11px 13px"}} glow>
                   <div style={{fontSize:8,color:J.muted,letterSpacing:1.5,fontFamily:"monospace",marginBottom:3}}>{l}</div>
-                  <div style={{fontSize:16,fontWeight:800,color:c,fontFamily:"monospace",textShadow:`0 0 8px ${c}55`}}>{v}</div>
+                  <div style={{fontSize:16,fontWeight:800,color:c,fontFamily:"monospace"}}>{v}</div>
                 </JCard>
               ))}
             </div>
-            {!isGoogle&&(parseInt(purchases)>0||parseInt(atc)>0)&&(
+            {isMeta&&(parseInt(purchases)>0||parseInt(atc)>0)&&(
               <JCard style={{padding:16,marginBottom:16}} glow>
-                <div style={{fontSize:9,color:J.cyan,letterSpacing:2,fontFamily:"monospace",marginBottom:12,textShadow:J.cyanGlowSm}}>◈ CONVERSION EVENTS</div>
+                <div style={{fontSize:9,color:J.cyan,letterSpacing:2,fontFamily:"monospace",marginBottom:12}}>◈ CONVERSION EVENTS</div>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
                   {[["PURCHASES",purchases,J.green],["ADD TO CART",atc,J.yellow],["VIEW CONTENT",(ci.actions||[]).find(a=>a.action_type==="view_content")?.value||0,J.cyan]].map(([l,v,c])=>(
                     <div key={l} style={{textAlign:"center",padding:10,background:c+"0A",border:`1px solid ${c}22`,borderRadius:2}}>
@@ -240,21 +250,9 @@ function CampaignDrawer({campaign,insights,googleCampaigns,datePreset,dateSince,
               </JCard>
             )}
             <JCard style={{padding:16}} glow accent={accentColor}>
-              <div style={{fontSize:9,color:accentColor,letterSpacing:2,fontFamily:"monospace",marginBottom:12,textShadow:`0 0 6px ${accentColor}88`}}>◈ CAMPAIGN INFO</div>
+              <div style={{fontSize:9,color:accentColor,letterSpacing:2,fontFamily:"monospace",marginBottom:12}}>◈ CAMPAIGN INFO</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-                {(isGoogle?[
-                  ["Daily Budget",campaign.daily_budget?fmt(campaign.daily_budget):"—"],
-                  ["Channel",campaign.channel||"—"],
-                  ["Conversions",parseFloat(campaign.conversions||0).toFixed(0)],
-                  ["Conv Value",campaign.revenue?fmt(campaign.revenue):"—"],
-                ]:[
-                  ["Daily Budget",campaign.daily_budget?fmt(parseFloat(campaign.daily_budget)/100):"—"],
-                  ["Lifetime Budget",campaign.lifetime_budget?fmt(parseFloat(campaign.lifetime_budget)/100):"—"],
-                  ["Buying Type",campaign.buying_type||"—"],
-                  ["Start Date",fmtDate(campaign.start_time)],
-                  ["End Date",campaign.stop_time?fmtDate(campaign.stop_time):"Ongoing"],
-                  ["Created",fmtDate(campaign.created_time)],
-                ]).map(([l,v])=>(
+                {(isMeta?[["Daily Budget",campaign.daily_budget?fmt(parseFloat(campaign.daily_budget)/100):"—"],["Objective",campaign.objective?.replace("OUTCOME_","")||"—"],["Start Date",fmtDate(campaign.start_time)],["End Date",campaign.stop_time?fmtDate(campaign.stop_time):"Ongoing"]]:[["Daily Budget",campaign.daily_budget?fmt(campaign.daily_budget):"—"],["Channel",campaign.channel||campaign.platform||"—"],["Conversions",parseFloat(campaign.conversions||0).toFixed(0)],["Conv Value",revenue?fmt(revenue):"—"]]).map(([l,v])=>(
                   <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:`1px solid ${J.border}`}}>
                     <span style={{fontSize:9,color:J.muted,fontFamily:"monospace"}}>▸ {l}</span>
                     <span style={{fontSize:11,fontWeight:700,color:J.text,fontFamily:"monospace"}}>{v}</span>
@@ -263,7 +261,7 @@ function CampaignDrawer({campaign,insights,googleCampaigns,datePreset,dateSince,
               </div>
             </JCard>
           </>}
-          {sec==="DAILY"&&!isGoogle&&(
+          {sec==="DAILY"&&isMeta&&(
             <JCard style={{padding:18}} glow>
               <div style={{fontSize:9,color:J.cyan,letterSpacing:2,fontFamily:"monospace",marginBottom:16}}>◈ DAILY PERFORMANCE</div>
               {loading?<div style={{padding:40,textAlign:"center",color:J.muted,fontFamily:"monospace",fontSize:10}}>LOADING...</div>:
@@ -273,7 +271,7 @@ function CampaignDrawer({campaign,insights,googleCampaigns,datePreset,dateSince,
                     <CartesianGrid strokeDasharray="3 3" stroke={J.grid}/>
                     <XAxis dataKey="date" tick={{fontSize:8,fill:J.muted,fontFamily:"monospace"}}/>
                     <YAxis tick={{fontSize:8,fill:J.muted,fontFamily:"monospace"}}/>
-                    <Tooltip contentStyle={{background:J.bg2,border:`1px solid ${J.borderBright}`,borderRadius:3,fontSize:10,fontFamily:"monospace",color:J.cyan}} formatter={v=>[fmt(v)]}/>
+                    <Tooltip contentStyle={{background:J.bg2,border:`1px solid ${J.borderBright}`,borderRadius:3,fontSize:10,fontFamily:"monospace"}} formatter={v=>[fmt(v)]}/>
                     <Bar dataKey="spend" fill={J.cyan} fillOpacity={.7} radius={[2,2,0,0]} name="Spend"/>
                     <Bar dataKey="revenue" fill={J.purple} fillOpacity={.7} radius={[2,2,0,0]} name="Revenue"/>
                   </BarChart>
@@ -301,13 +299,13 @@ function CampaignDrawer({campaign,insights,googleCampaigns,datePreset,dateSince,
               </>}
             </JCard>
           )}
-          {sec==="AD SETS"&&!isGoogle&&(
+          {sec==="AD SETS"&&isMeta&&(
             <JCard style={{padding:0,overflow:"hidden"}} glow>
               <div style={{padding:"12px 16px",borderBottom:`1px solid ${J.border}`}}>
                 <div style={{fontSize:9,color:J.cyan,letterSpacing:2,fontFamily:"monospace"}}>◈ AD SETS — {adsets.length} FOUND</div>
               </div>
               {loading?<div style={{padding:40,textAlign:"center",color:J.muted,fontFamily:"monospace",fontSize:10}}>LOADING...</div>:
-              adsets.length===0?<div style={{padding:40,textAlign:"center",color:J.muted,fontFamily:"monospace",fontSize:10}}>NO AD SETS FOUND</div>:
+              adsets.length===0?<div style={{padding:40,textAlign:"center",color:J.muted,fontFamily:"monospace",fontSize:10}}>NO AD SETS</div>:
               <table style={{width:"100%",borderCollapse:"collapse"}}>
                 <thead><tr style={{borderBottom:`1px solid ${J.border}`,background:J.cyan+"06"}}>
                   {["AD SET","STATUS","DAILY BUDGET","OPTIMIZATION","BILLING"].map(h=><th key={h} style={{padding:"9px 12px",fontSize:7,color:J.muted,fontFamily:"monospace",letterSpacing:1.5,textAlign:h==="AD SET"?"left":"center"}}>{h}</th>)}
@@ -332,18 +330,17 @@ function CampaignDrawer({campaign,insights,googleCampaigns,datePreset,dateSince,
   );
 }
 
-function AIPanel({onClose,metaInsights,googleInsights,campaigns,datePreset}){
+function AIPanel({onClose,metaInsights,googleSummary,snapSummary,campaigns,datePreset}){
   const metaSpend=metaInsights.reduce((a,i)=>a+parseFloat(i.spend||0),0);
-  const googleSpend=googleInsights?.spend||0;
-  const totalSpend=metaSpend+googleSpend;
-  const metaRoas=metaInsights.filter(i=>i.roas);
-  const avgMetaRoas=metaRoas.length>0?(metaRoas.reduce((a,i)=>a+parseFloat(i.roas),0)/metaRoas.length).toFixed(2):null;
-  const[msgs,setMsgs]=useState([{role:"assistant",content:`JARVIS ONLINE.\n\nMeta: ${metaInsights.length} campaigns | Spend: ${fmt(metaSpend)}\nGoogle: ${googleInsights?`Spend: ${fmt(googleSpend)} | ROAS: ${googleInsights.roas?.toFixed(2)||"N/A"}x`:"Connecting..."}\n\n⚡ Awaiting command.`}]);
+  const googleSpend=googleSummary?.spend||0;
+  const snapSpend=snapSummary?.spend||0;
+  const total=metaSpend+googleSpend+snapSpend;
+  const[msgs,setMsgs]=useState([{role:"assistant",content:`JARVIS ONLINE — 3 PLATFORM MODE\n\nMeta: ${fmt(metaSpend)} spend\nGoogle: ${googleSpend>0?fmt(googleSpend)+" spend":"Not connected"}\nSnapchat: ${snapSpend>0?fmt(snapSpend)+" spend":"Not connected"}\n\n⚡ Awaiting command.`}]);
   const[input,setInput]=useState("");const[loading,setLoading]=useState(false);const ref=useRef(null);
   useEffect(()=>{ref.current?.scrollIntoView({behavior:"smooth"})},[msgs,loading]);
-  const QUICK=["Compare Meta vs Google","Best ROAS campaign?","Where to shift budget?","Threat assessment"];
+  const QUICK=["Compare all platforms","Best ROAS platform?","Where to shift budget?","Threat assessment"];
   const send=async(text)=>{
-    const ctx=`\n\nREPRISE (${datePreset}): META spend=${fmt(metaSpend)} roas=${avgMetaRoas||"N/A"}x | GOOGLE spend=${fmt(googleSpend)} roas=${googleInsights?.roas?.toFixed(2)||"N/A"}x | Combined spend=${fmt(totalSpend)} | Meta top campaigns: ${metaInsights.slice(0,3).map(i=>`${i.campaign_name?.slice(0,15)} ₹${parseFloat(i.spend||0).toFixed(0)} ${i.roas?i.roas.toFixed(1)+"x":""}`).join(", ")} | Command: ${text}`;
+    const ctx=`\n\nREPRISE (${datePreset}): META spend=${fmt(metaSpend)} roas=${metaInsights.filter(i=>i.roas).length>0?(metaInsights.filter(i=>i.roas).reduce((a,i)=>a+parseFloat(i.roas),0)/metaInsights.filter(i=>i.roas).length).toFixed(2)+"x":"N/A"} | GOOGLE spend=${fmt(googleSpend)} roas=${googleSummary?.roas?.toFixed(2)||"N/A"}x | SNAP spend=${fmt(snapSpend)} roas=${snapSummary?.roas?.toFixed(2)||"N/A"}x | Total=${fmt(total)} | Command: ${text}`;
     const nm=[...msgs,{role:"user",content:text}];setMsgs(nm);setInput("");setLoading(true);
     try{
       const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,system:SYSTEM_PROMPT,messages:[...nm.slice(0,-1),{role:"user",content:ctx}]})});
@@ -367,7 +364,7 @@ function AIPanel({onClose,metaInsights,googleInsights,campaigns,datePreset}){
           <div style={{width:34,height:34,borderRadius:"50%",border:`2px solid ${J.cyan}`,display:"flex",alignItems:"center",justifyContent:"center",background:J.cyan+"0A"}}><div style={{width:12,height:12,borderRadius:"50%",background:J.cyan}}/></div>
           <div>
             <div style={{fontWeight:700,fontSize:12,color:J.cyan,fontFamily:"monospace",letterSpacing:3}}>J.A.R.V.I.S</div>
-            <div style={{fontSize:8,color:J.muted,letterSpacing:1.5,fontFamily:"monospace"}}>META + GOOGLE · ACTIVE</div>
+            <div style={{fontSize:8,color:J.muted,letterSpacing:1.5,fontFamily:"monospace"}}>META · GOOGLE · SNAPCHAT</div>
           </div>
         </div>
         <button onClick={onClose} style={{background:"none",border:`1px solid ${J.border}`,borderRadius:2,color:J.muted,cursor:"pointer",fontSize:14,width:26,height:26,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
@@ -406,8 +403,11 @@ export default function App(){
   const[metaInsights,setMetaInsights]=useState([]);
   const[googleCampaigns,setGoogleCampaigns]=useState([]);
   const[googleSummary,setGoogleSummary]=useState(null);
-  const[googleLoading,setGoogleLoading]=useState(true);
-  const[metaLoading,setMetaLoading]=useState(true);
+  const[snapCampaigns,setSnapCampaigns]=useState([]);
+  const[snapSummary,setSnapSummary]=useState(null);
+  const[loadingMeta,setLoadingMeta]=useState(true);
+  const[loadingGoogle,setLoadingGoogle]=useState(true);
+  const[loadingSnap,setLoadingSnap]=useState(true);
   const[lastUpdated,setLastUpdated]=useState(null);
   const[time,setTime]=useState(new Date());
   const[selectedCampaign,setSelectedCampaign]=useState(null);
@@ -420,62 +420,67 @@ export default function App(){
   useEffect(()=>{const t=setInterval(()=>setTime(new Date()),1000);return()=>clearInterval(t);},[]);
 
   const fetchMeta=async(preset,since,until)=>{
-    setMetaLoading(true);
+    setLoadingMeta(true);
     const p=buildParams(preset,since,until);
     try{
       const[c,ins]=await Promise.all([fetch(`${API_URL}/api/campaigns`),fetch(`${API_URL}/api/insights?${p}`)]);
       const cd=await c.json(),id=await ins.json();
       if(cd.data)setCampaigns(cd.data);
       if(id.data)setMetaInsights(id.data);
-    }catch(e){console.log("Meta error:",e);}
-    finally{setMetaLoading(false);}
+    }catch(e){console.log("Meta:",e);}finally{setLoadingMeta(false);}
   };
 
   const fetchGoogle=async(preset,since,until)=>{
-    setGoogleLoading(true);
+    setLoadingGoogle(true);
     const p=buildParams(preset,since,until);
     try{
-      const[camps,summary]=await Promise.all([
-        fetch(`${API_URL}/api/google/campaigns?${p}`),
-        fetch(`${API_URL}/api/google/insights?${p}`)
-      ]);
-      const cd=await camps.json(),sd=await summary.json();
+      const[c,s]=await Promise.all([fetch(`${API_URL}/api/google/campaigns?${p}`),fetch(`${API_URL}/api/google/insights?${p}`)]);
+      const cd=await c.json(),sd=await s.json();
       if(cd.data)setGoogleCampaigns(cd.data);
       if(sd.data)setGoogleSummary(sd.data);
-    }catch(e){console.log("Google error:",e);}
-    finally{setGoogleLoading(false);}
+    }catch(e){console.log("Google:",e);}finally{setLoadingGoogle(false);}
   };
 
-  const fetchData=async(preset,since,until)=>{
-    await Promise.all([fetchMeta(preset,since,until),fetchGoogle(preset,since,until)]);
+  const fetchSnap=async(preset,since,until)=>{
+    setLoadingSnap(true);
+    const p=buildParams(preset,since,until);
+    try{
+      const[c,s]=await Promise.all([fetch(`${API_URL}/api/snapchat/campaigns?${p}`),fetch(`${API_URL}/api/snapchat/insights?${p}`)]);
+      const cd=await c.json(),sd=await s.json();
+      if(cd.data)setSnapCampaigns(cd.data);
+      if(sd.data)setSnapSummary(sd.data);
+    }catch(e){console.log("Snap:",e);}finally{setLoadingSnap(false);}
+  };
+
+  const fetchAll=async(preset,since,until)=>{
+    await Promise.all([fetchMeta(preset,since,until),fetchGoogle(preset,since,until),fetchSnap(preset,since,until)]);
     setLastUpdated(new Date());
   };
 
-  useEffect(()=>{fetchData("last_30d","","");},[]);
+  useEffect(()=>{fetchAll("last_30d","","");},[]);
 
-  const handlePresetSelect=(preset)=>{setDatePreset(preset);if(preset!=="custom")fetchData(preset,"","");};
-  const handleCustomApply=()=>{if(dateSince&&dateUntil)fetchData("custom",dateSince,dateUntil);};
+  const handlePresetSelect=(preset)=>{setDatePreset(preset);if(preset!=="custom")fetchAll(preset,"","");};
+  const handleCustomApply=()=>{if(dateSince&&dateUntil)fetchAll("custom",dateSince,dateUntil);};
 
-  // Combined data
-  const metaActive=campaigns.filter(c=>c.status==="ACTIVE");
+  // Aggregates
   const metaSpend=metaInsights.reduce((a,i)=>a+parseFloat(i.spend||0),0);
   const metaRevenue=metaInsights.reduce((a,i)=>a+(i.revenue||0),0);
   const googleSpend=googleSummary?.spend||0;
-  const googleRevenue=googleSummary?.conversion_value||0;
-  const totalSpend=metaSpend+googleSpend;
-  const totalRevenue=metaRevenue+googleRevenue;
+  const googleRevenue=googleSummary?.revenue||0;
+  const snapSpend=snapSummary?.spend||0;
+  const snapRevenue=snapSummary?.revenue||0;
+  const totalSpend=metaSpend+googleSpend+snapSpend;
+  const totalRevenue=metaRevenue+googleRevenue+snapRevenue;
   const blendedRoas=totalRevenue>0&&totalSpend>0?totalRevenue/totalSpend:null;
-  const metaRoasCamps=metaInsights.filter(i=>i.roas);
-  const avgMetaRoas=metaRoasCamps.length>0?metaRoasCamps.reduce((a,i)=>a+parseFloat(i.roas),0)/metaRoasCamps.length:null;
-  const totalImpressions=metaInsights.reduce((a,i)=>a+parseInt(i.impressions||0),0)+(googleSummary?.impressions||0);
-  const totalClicks=metaInsights.reduce((a,i)=>a+parseInt(i.clicks||0),0)+(googleSummary?.clicks||0);
-  const avgCTR=totalImpressions>0?((totalClicks/totalImpressions)*100).toFixed(2):0;
-  const loading=metaLoading||googleLoading;
+  const totalImpressions=metaInsights.reduce((a,i)=>a+parseInt(i.impressions||0),0)+(googleSummary?.impressions||0)+(snapSummary?.impressions||0);
+  const totalClicks=metaInsights.reduce((a,i)=>a+parseInt(i.clicks||0),0)+(googleSummary?.clicks||0)+(snapSummary?.clicks||0);
+  const avgCTR=totalImpressions>0?(totalClicks/totalImpressions*100).toFixed(2):0;
+  const loading=loadingMeta||loadingGoogle||loadingSnap;
 
-  // All campaigns combined for table
   const allCampaigns=[
     ...campaigns.map(c=>{const ci=metaInsights.find(i=>i.campaign_id===c.id||i.campaign_name===c.name)||{};return{...c,...ci,platform:"meta"};}),
-    ...googleCampaigns.map(c=>({...c,platform:"google",status:c.status==="ENABLED"?"ACTIVE":c.status}))
+    ...googleCampaigns.map(c=>({...c,platform:"google",status:c.status==="ENABLED"?"ACTIVE":c.status})),
+    ...snapCampaigns.map(c=>({...c,platform:"snapchat"})),
   ];
   const filteredCampaigns=allCampaigns.filter(c=>{
     if(platformFilter!=="ALL"&&c.platform!==platformFilter.toLowerCase())return false;
@@ -483,8 +488,10 @@ export default function App(){
     return true;
   });
 
+  const allRoas=[...metaInsights.filter(i=>i.roas).map(i=>({...i,platform:"meta"})),...googleCampaigns.filter(i=>i.roas).map(i=>({...i,platform:"google"})),...snapCampaigns.filter(i=>i.roas).map(i=>({...i,platform:"snapchat"}))].sort((a,b)=>parseFloat(b.roas)-parseFloat(a.roas));
+
   const TABS=[{id:"overview",label:"OVERVIEW"},{id:"campaigns",label:`CAMPAIGNS [${allCampaigns.length}]`},{id:"intel",label:"INTEL"}];
-  const trendData=Array.from({length:14},(_,i)=>({day:`D${i+1}`,meta:Math.round(metaSpend/14*(0.6+Math.random()*.8)),google:Math.round(googleSpend/14*(0.6+Math.random()*.8))}));
+  const trendData=Array.from({length:14},(_,i)=>({day:`D${i+1}`,meta:Math.round(metaSpend/14*(0.6+Math.random()*.8)),google:Math.round(googleSpend/14*(0.6+Math.random()*.8)),snap:Math.round(snapSpend/14*(0.6+Math.random()*.8))}));
 
   return(
     <div style={{fontFamily:"'Courier New',monospace",background:J.bg,minHeight:"100vh",color:J.text,paddingRight:aiOpen?370:0,transition:"padding-right .3s",position:"relative"}}>
@@ -514,14 +521,14 @@ export default function App(){
           <div style={{display:"flex",alignItems:"center",gap:12}}>
             {blendedRoas&&<div style={{padding:"4px 12px",border:`1px solid ${roasColor(blendedRoas)}44`,borderRadius:2,background:roasColor(blendedRoas)+"0A"}}>
               <span style={{fontSize:8,color:J.muted,fontFamily:"monospace",letterSpacing:1}}>BLENDED ROAS </span>
-              <span style={{fontSize:13,fontWeight:900,color:roasColor(blendedRoas),fontFamily:"monospace",textShadow:`0 0 8px ${roasColor(blendedRoas)}88`}}>{blendedRoas.toFixed(2)}x</span>
+              <span style={{fontSize:13,fontWeight:900,color:roasColor(blendedRoas),fontFamily:"monospace"}}>{blendedRoas.toFixed(2)}x</span>
             </div>}
             <div style={{fontFamily:"monospace",fontSize:11,color:J.cyan,letterSpacing:2}}>{time.toLocaleTimeString()}</div>
             <div style={{display:"flex",alignItems:"center",gap:6,padding:"4px 10px",border:`1px solid ${loading?J.yellow+"44":J.green+"44"}`,borderRadius:2}}>
-              <div style={{width:6,height:6,borderRadius:"50%",background:loading?J.yellow:J.green,boxShadow:`0 0 8px ${loading?J.yellow:J.green}`,animation:"pulse 2s infinite"}}/>
+              <div style={{width:6,height:6,borderRadius:"50%",background:loading?J.yellow:J.green,animation:"pulse 2s infinite"}}/>
               <span style={{fontSize:8,color:loading?J.yellow:J.green,fontFamily:"monospace",letterSpacing:2}}>{loading?"SYNCING":"ONLINE"}</span>
             </div>
-            <button onClick={()=>fetchData(datePreset,dateSince,dateUntil)} style={{padding:"5px 12px",background:"transparent",border:`1px solid ${J.borderBright}`,borderRadius:2,color:J.cyan,fontSize:9,cursor:"pointer",fontFamily:"monospace",boxShadow:J.cyanGlowSm}}>↻ SYNC</button>
+            <button onClick={()=>fetchAll(datePreset,dateSince,dateUntil)} style={{padding:"5px 12px",background:"transparent",border:`1px solid ${J.borderBright}`,borderRadius:2,color:J.cyan,fontSize:9,cursor:"pointer",fontFamily:"monospace",boxShadow:J.cyanGlowSm}}>↻ SYNC</button>
             <button onClick={()=>setAiOpen(!aiOpen)} style={{padding:"6px 18px",background:aiOpen?J.cyan+"18":"transparent",border:`1px solid ${J.cyan}`,borderRadius:2,color:J.cyan,fontSize:10,cursor:"pointer",fontFamily:"monospace",letterSpacing:2,fontWeight:700,boxShadow:aiOpen?J.cyanGlow:J.cyanGlowSm}}>⚡ J.A.R.V.I.S</button>
           </div>
         </div>
@@ -535,88 +542,90 @@ export default function App(){
 
       <div style={{padding:"18px 24px 60px",position:"relative",zIndex:1,animation:"fadeUp .3s ease"}}>
         {tab==="overview"&&<>
-          {/* STATUS BAR */}
+          {/* STATUS */}
           <div style={{display:"flex",gap:8,marginBottom:14,padding:"7px 14px",background:J.bg2,border:`1px solid ${J.border}`,borderRadius:2,alignItems:"center"}}>
             <div style={{width:5,height:5,borderRadius:"50%",background:J.green,animation:"pulse 2s infinite",boxShadow:`0 0 6px ${J.green}`}}/>
             <span style={{fontFamily:"monospace",fontSize:9,color:J.muted,letterSpacing:1.5}}>
-              META: {campaigns.length} campaigns {metaLoading?"(syncing)":"✓"} · GOOGLE: {googleCampaigns.length} campaigns {googleLoading?"(syncing)":"✓"} · COMBINED SPEND: {fmt(totalSpend)}{blendedRoas?` · ROAS: ${blendedRoas.toFixed(2)}x`:""} · {lastUpdated?.toLocaleTimeString()||"—"}
+              <span style={{color:J.meta}}>META</span> {loadingMeta?"…":"✓"} · <span style={{color:J.google}}>GOOGLE</span> {loadingGoogle?"…":"✓"} · <span style={{color:J.snap}}>SNAP</span> {loadingSnap?"…":"✓"} · TOTAL SPEND: {fmt(totalSpend)}{blendedRoas?` · ROAS: ${blendedRoas.toFixed(2)}x`:""} · {lastUpdated?.toLocaleTimeString()||"—"}
             </span>
           </div>
 
-          {/* TOP KPI ROW */}
-          <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:10,marginBottom:14}}>
+          {/* KPI ROW */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:8,marginBottom:14}}>
             {[
               ["TOTAL SPEND",fmt(totalSpend),J.cyan],
               ["TOTAL REVENUE",totalRevenue>0?fmt(totalRevenue):"N/A",J.purple],
               ["BLENDED ROAS",blendedRoas?`${blendedRoas.toFixed(2)}x`:"N/A",blendedRoas?roasColor(blendedRoas):J.muted],
-              ["META ROAS",avgMetaRoas?`${avgMetaRoas.toFixed(2)}x`:"N/A",avgMetaRoas?roasColor(avgMetaRoas):J.muted],
-              ["GOOGLE ROAS",googleSummary?.roas?`${googleSummary.roas.toFixed(2)}x`:"N/A",googleSummary?.roas?roasColor(googleSummary.roas):J.muted],
+              ["META SPEND",fmt(metaSpend),J.meta],
+              ["GOOGLE SPEND",googleSpend>0?fmt(googleSpend):"N/A",J.google],
+              ["SNAP SPEND",snapSpend>0?fmt(snapSpend):"N/A",J.snap],
               ["AVG CTR",`${avgCTR}%`,parseFloat(avgCTR)>=1?J.green:J.red],
             ].map(([l,v,c])=>(
-              <JCard key={l} style={{padding:"12px 14px"}} glow accent={c}>
-                <div style={{fontSize:8,color:J.muted,letterSpacing:1.5,fontFamily:"monospace",marginBottom:4}}>◈ {l}</div>
-                <div style={{fontSize:18,fontWeight:900,color:c,fontFamily:"'Orbitron',monospace",textShadow:`0 0 10px ${c}66`,letterSpacing:-0.5}}>{v}</div>
+              <JCard key={l} style={{padding:"10px 12px"}} glow accent={c}>
+                <div style={{fontSize:7,color:J.muted,letterSpacing:1.5,fontFamily:"monospace",marginBottom:4}}>◈ {l}</div>
+                <div style={{fontSize:16,fontWeight:900,color:c,fontFamily:"'Orbitron',monospace",letterSpacing:-0.5}}>{v}</div>
               </JCard>
             ))}
           </div>
 
-          {/* PLATFORM CARDS */}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
-            <PlatformCard platform="meta" data={metaInsights} loading={metaLoading}/>
-            <PlatformCard platform="google" data={googleSummary} loading={googleLoading}/>
+          {/* 3 PLATFORM CARDS */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14,marginBottom:14}}>
+            <PlatformCard platform="meta" data={metaInsights} loading={loadingMeta}/>
+            <PlatformCard platform="google" data={googleSummary} loading={loadingGoogle}/>
+            <PlatformCard platform="snapchat" data={snapSummary} loading={loadingSnap}/>
           </div>
 
           {/* CHARTS */}
           <div style={{display:"grid",gridTemplateColumns:"1.6fr 1fr",gap:14}}>
             <JCard style={{padding:18}} glow>
-              <div style={{fontSize:9,color:J.cyan,letterSpacing:2,marginBottom:14,fontFamily:"monospace",textShadow:J.cyanGlowSm}}>◈ META vs GOOGLE — SPEND TRAJECTORY</div>
+              <div style={{fontSize:9,color:J.cyan,letterSpacing:2,marginBottom:14,fontFamily:"monospace",textShadow:J.cyanGlowSm}}>◈ PLATFORM SPEND COMPARISON</div>
               <ResponsiveContainer width="100%" height={160}>
                 <AreaChart data={trendData}>
                   <defs>
-                    <linearGradient id="mg" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={J.meta} stopOpacity={.3}/><stop offset="95%" stopColor={J.meta} stopOpacity={0}/></linearGradient>
-                    <linearGradient id="gg" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={J.google} stopOpacity={.3}/><stop offset="95%" stopColor={J.google} stopOpacity={0}/></linearGradient>
+                    <linearGradient id="mg2" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={J.meta} stopOpacity={.3}/><stop offset="95%" stopColor={J.meta} stopOpacity={0}/></linearGradient>
+                    <linearGradient id="gg2" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={J.google} stopOpacity={.3}/><stop offset="95%" stopColor={J.google} stopOpacity={0}/></linearGradient>
+                    <linearGradient id="sg2" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={J.snap} stopOpacity={.3}/><stop offset="95%" stopColor={J.snap} stopOpacity={0}/></linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke={J.grid}/>
                   <XAxis dataKey="day" tick={{fontSize:7,fill:J.muted,fontFamily:"monospace"}}/><YAxis tick={{fontSize:7,fill:J.muted,fontFamily:"monospace"}}/>
                   <Tooltip contentStyle={{background:J.bg2,border:`1px solid ${J.borderBright}`,borderRadius:3,fontSize:10,fontFamily:"monospace"}} formatter={v=>[fmt(v)]}/>
                   <Legend wrapperStyle={{fontSize:9,fontFamily:"monospace",color:J.muted}}/>
-                  <Area type="monotone" dataKey="meta" stroke={J.meta} fill="url(#mg)" strokeWidth={2} dot={false} name="Meta"/>
-                  <Area type="monotone" dataKey="google" stroke={J.google} fill="url(#gg)" strokeWidth={2} dot={false} name="Google"/>
+                  <Area type="monotone" dataKey="meta" stroke={J.meta} fill="url(#mg2)" strokeWidth={2} dot={false} name="Meta"/>
+                  <Area type="monotone" dataKey="google" stroke={J.google} fill="url(#gg2)" strokeWidth={2} dot={false} name="Google"/>
+                  <Area type="monotone" dataKey="snap" stroke={J.snap} fill="url(#sg2)" strokeWidth={2} dot={false} name="Snapchat"/>
                 </AreaChart>
               </ResponsiveContainer>
             </JCard>
             <JCard style={{padding:18}} glow>
               <div style={{fontSize:9,color:J.cyan,letterSpacing:2,marginBottom:14,fontFamily:"monospace",textShadow:J.cyanGlowSm}}>◈ TOP ROAS TARGETS</div>
-              {[...metaInsights.filter(i=>i.roas).map(i=>({...i,platform:"meta"})),...googleCampaigns.filter(i=>i.roas).map(i=>({...i,platform:"google"}))]
-                .sort((a,b)=>parseFloat(b.roas)-parseFloat(a.roas)).slice(0,6).map((c,i)=>(
+              {allRoas.slice(0,6).map((c,i)=>(
                 <div key={i} style={{marginBottom:9}}>
                   <div style={{display:"flex",justifyContent:"space-between",marginBottom:3,alignItems:"center",gap:6}}>
-                    <PlatformTag platform={c.platform}/>
+                    <PTag p={c.platform}/>
                     <span style={{fontSize:8,color:J.muted,fontFamily:"monospace",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.campaign_name||c.name}</span>
                     <RoasBadge roas={c.roas}/>
                   </div>
-                  <div style={{height:2,background:J.border,borderRadius:1}}>
-                    <div style={{width:`${Math.min(parseFloat(c.roas||0)/8*100,100)}%`,height:"100%",background:roasColor(c.roas),boxShadow:`0 0 4px ${roasColor(c.roas)}`}}/>
-                  </div>
+                  <div style={{height:2,background:J.border,borderRadius:1}}><div style={{width:`${Math.min(parseFloat(c.roas||0)/8*100,100)}%`,height:"100%",background:roasColor(c.roas)}}/></div>
                 </div>
               ))}
-              {[...metaInsights.filter(i=>i.roas),...googleCampaigns.filter(i=>i.roas)].length===0&&(
-                <div style={{fontSize:10,color:J.muted,fontFamily:"monospace",textAlign:"center",padding:20}}>No ROAS data.<br/>Ensure conversion tracking is set up.</div>
-              )}
+              {allRoas.length===0&&<div style={{fontSize:10,color:J.muted,fontFamily:"monospace",textAlign:"center",padding:20}}>No ROAS data yet.<br/>Ensure conversion tracking on all platforms.</div>}
             </JCard>
           </div>
         </>}
 
-        {/* CAMPAIGNS TAB */}
+        {/* CAMPAIGNS */}
         {tab==="campaigns"&&<JCard style={{overflow:"hidden"}} glow>
           <div style={{padding:"12px 18px",borderBottom:`1px solid ${J.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
             <div style={{fontSize:10,color:J.cyan,letterSpacing:2,fontFamily:"monospace",textShadow:J.cyanGlowSm}}>◈ ALL CAMPAIGNS — {filteredCampaigns.length} ENTRIES</div>
-            <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+            <div style={{display:"flex",gap:5,alignItems:"center",flexWrap:"wrap"}}>
               <span style={{fontSize:8,color:J.muted,fontFamily:"monospace"}}>PLATFORM:</span>
-              {["ALL","META","GOOGLE"].map(s=><button key={s} onClick={()=>setPlatformFilter(s)} style={{padding:"3px 9px",background:platformFilter===s?J.cyan+"22":"transparent",border:`1px solid ${platformFilter===s?J.cyan:J.border}`,borderRadius:2,color:platformFilter===s?J.cyan:J.muted,fontSize:8,cursor:"pointer",fontFamily:"monospace",boxShadow:platformFilter===s?J.cyanGlowSm:"none"}}>{s}</button>)}
-              <span style={{fontSize:8,color:J.muted,fontFamily:"monospace",marginLeft:8}}>STATUS:</span>
-              {["ALL","ACTIVE","PAUSED"].map(s=><button key={s} onClick={()=>setStatusFilter(s)} style={{padding:"3px 9px",background:statusFilter===s?J.cyan+"22":"transparent",border:`1px solid ${statusFilter===s?J.cyan:J.border}`,borderRadius:2,color:statusFilter===s?J.cyan:J.muted,fontSize:8,cursor:"pointer",fontFamily:"monospace",boxShadow:statusFilter===s?J.cyanGlowSm:"none"}}>{s}</button>)}
-              <span style={{fontSize:8,color:J.muted,fontFamily:"monospace",marginLeft:8}}>↗ CLICK TO EXPAND</span>
+              {["ALL","META","GOOGLE","SNAPCHAT"].map(s=>(
+                <button key={s} onClick={()=>setPlatformFilter(s)} style={{padding:"3px 9px",background:platformFilter===s?J.cyan+"22":"transparent",border:`1px solid ${platformFilter===s?J.cyan:J.border}`,borderRadius:2,color:platformFilter===s?J.cyan:J.muted,fontSize:8,cursor:"pointer",fontFamily:"monospace",boxShadow:platformFilter===s?J.cyanGlowSm:"none"}}>{s}</button>
+              ))}
+              <span style={{fontSize:8,color:J.muted,fontFamily:"monospace",marginLeft:6}}>STATUS:</span>
+              {["ALL","ACTIVE","PAUSED"].map(s=>(
+                <button key={s} onClick={()=>setStatusFilter(s)} style={{padding:"3px 9px",background:statusFilter===s?J.cyan+"22":"transparent",border:`1px solid ${statusFilter===s?J.cyan:J.border}`,borderRadius:2,color:statusFilter===s?J.cyan:J.muted,fontSize:8,cursor:"pointer",fontFamily:"monospace",boxShadow:statusFilter===s?J.cyanGlowSm:"none"}}>{s}</button>
+              ))}
             </div>
           </div>
           {loading&&<div style={{padding:40,textAlign:"center",color:J.muted,fontFamily:"monospace",fontSize:11}}>LOADING...</div>}
@@ -628,11 +637,12 @@ export default function App(){
               <tbody>
                 {filteredCampaigns.map((c,i)=>{
                   const ctr=parseFloat(c.ctr||0),cpc=parseFloat(c.cpc||0);
+                  const pc=PLATFORMS[c.platform]||J.cyan;
                   return(<tr key={i} className="trow" onClick={()=>setSelectedCampaign(c)} style={{borderBottom:`1px solid ${J.border}`,transition:"background .15s"}}>
-                    <td style={{padding:"10px 12px",textAlign:"center"}}><PlatformTag platform={c.platform}/></td>
-                    <td style={{padding:"10px 12px",fontSize:11,fontWeight:700,color:J.text,fontFamily:"monospace",maxWidth:240,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}><span style={{color:c.platform==="google"?J.google:J.cyan,marginRight:6,fontSize:8}}>▸</span>{c.name||c.campaign_name}</td>
-                    <td style={{padding:"10px 12px",textAlign:"center"}}><span style={{padding:"2px 7px",borderRadius:2,fontSize:8,fontFamily:"monospace",background:c.status==="ACTIVE"||c.status==="ENABLED"?J.green+"18":J.muted+"18",color:c.status==="ACTIVE"||c.status==="ENABLED"?J.green:J.muted,border:`1px solid ${c.status==="ACTIVE"||c.status==="ENABLED"?J.green+"44":J.muted+"33"}`}}>{c.status}</span></td>
-                    <td style={{padding:"10px 12px",textAlign:"center",fontSize:11,fontWeight:700,color:c.platform==="google"?J.google:J.cyan,fontFamily:"monospace"}}>{c.spend?fmt(parseFloat(c.spend)):"—"}</td>
+                    <td style={{padding:"10px 12px",textAlign:"center"}}><PTag p={c.platform}/></td>
+                    <td style={{padding:"10px 12px",fontSize:11,fontWeight:700,color:J.text,fontFamily:"monospace",maxWidth:220,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}><span style={{color:pc,marginRight:6,fontSize:8}}>▸</span>{c.name||c.campaign_name}</td>
+                    <td style={{padding:"10px 12px",textAlign:"center"}}><span style={{padding:"2px 7px",borderRadius:2,fontSize:8,fontFamily:"monospace",background:c.status==="ACTIVE"?J.green+"18":J.muted+"18",color:c.status==="ACTIVE"?J.green:J.muted,border:`1px solid ${c.status==="ACTIVE"?J.green+"44":J.muted+"33"}`}}>{c.status}</span></td>
+                    <td style={{padding:"10px 12px",textAlign:"center",fontSize:11,fontWeight:700,color:pc,fontFamily:"monospace"}}>{c.spend?fmt(parseFloat(c.spend)):"—"}</td>
                     <td style={{padding:"10px 12px",textAlign:"center"}}><RoasBadge roas={c.roas}/></td>
                     <td style={{padding:"10px 12px",textAlign:"center",fontSize:11,fontWeight:700,color:J.purple,fontFamily:"monospace"}}>{c.revenue&&c.revenue>0?fmt(c.revenue):"—"}</td>
                     <td style={{padding:"10px 12px",textAlign:"center"}}>{ctr>0?<span style={{padding:"2px 7px",borderRadius:2,fontSize:9,fontFamily:"monospace",background:ctr>=1?J.green+"18":J.red+"18",color:ctr>=1?J.green:J.red,border:`1px solid ${ctr>=1?J.green+"44":J.red+"44"}`}}>{ctr.toFixed(2)}%</span>:<span style={{color:J.muted,fontSize:9}}>—</span>}</td>
@@ -645,83 +655,59 @@ export default function App(){
           </div>}
         </JCard>}
 
-        {/* INTEL TAB */}
-        {tab==="intel"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
-          {/* META INTEL */}
-          <JCard style={{overflow:"hidden"}} glow>
-            <div style={{padding:"12px 18px",borderBottom:`1px solid ${J.border}`,display:"flex",alignItems:"center",gap:8}}>
-              <div style={{fontSize:10,color:J.meta,letterSpacing:2,fontFamily:"monospace",textShadow:J.cyanGlowSm}}>◈ META INTEL</div>
-              <span style={{fontSize:8,color:J.muted,fontFamily:"monospace"}}>{metaInsights.length} campaigns · click to expand</span>
-            </div>
-            {metaInsights.length===0?<div style={{padding:30,textAlign:"center",color:J.muted,fontFamily:"monospace",fontSize:10}}>NO META DATA</div>:
-            <div style={{overflowX:"auto"}}>
+        {/* INTEL */}
+        {tab==="intel"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14}}>
+          {[
+            {platform:"meta",color:J.meta,label:"META INTEL",data:metaInsights,loading:loadingMeta},
+            {platform:"google",color:J.google,label:"GOOGLE INTEL",data:googleCampaigns,loading:loadingGoogle},
+            {platform:"snapchat",color:J.snap,label:"SNAPCHAT INTEL",data:snapCampaigns,loading:loadingSnap},
+          ].map(({platform,color,label,data,loading:l})=>(
+            <JCard key={platform} style={{overflow:"hidden"}} glow accent={color}>
+              <div style={{padding:"12px 14px",borderBottom:`1px solid ${J.border}`,display:"flex",alignItems:"center",gap:8}}>
+                <div style={{fontSize:10,color,letterSpacing:2,fontFamily:"monospace",textShadow:`0 0 6px ${color}88`}}>◈ {label}</div>
+                <span style={{fontSize:8,color:J.muted,fontFamily:"monospace"}}>{data.length} camps</span>
+              </div>
+              {l?<div style={{padding:20,textAlign:"center",color:J.muted,fontFamily:"monospace",fontSize:10}}>SYNCING...</div>:
+              data.length===0?<div style={{padding:20,textAlign:"center",color:J.muted,fontFamily:"monospace",fontSize:10}}>NOT CONNECTED</div>:
               <table style={{width:"100%",borderCollapse:"collapse"}}>
-                <thead><tr style={{background:J.meta+"04",borderBottom:`1px solid ${J.border}`}}>
-                  {["CAMPAIGN","SPEND","ROAS","CTR","CPC"].map(h=><th key={h} style={{padding:"8px 10px",fontSize:7,color:J.muted,textAlign:h==="CAMPAIGN"?"left":"center",fontFamily:"monospace",letterSpacing:2}}>{h}</th>)}
+                <thead><tr style={{background:color+"04",borderBottom:`1px solid ${J.border}`}}>
+                  {["CAMPAIGN","SPEND","ROAS","CTR"].map(h=><th key={h} style={{padding:"7px 10px",fontSize:7,color:J.muted,textAlign:h==="CAMPAIGN"?"left":"center",fontFamily:"monospace",letterSpacing:2}}>{h}</th>)}
                 </tr></thead>
                 <tbody>
-                  {metaInsights.sort((a,b)=>parseFloat(b.spend||0)-parseFloat(a.spend||0)).map((c,i)=>{
-                    const ctr=parseFloat(c.ctr||0),cpc=parseFloat(c.cpc||0);
-                    const camp=campaigns.find(x=>x.id===c.campaign_id||x.name===c.campaign_name);
-                    return(<tr key={i} className="trow" onClick={()=>camp&&setSelectedCampaign({...camp,...c,platform:"meta"})} style={{borderBottom:`1px solid ${J.border}`}}>
-                      <td style={{padding:"9px 10px",fontSize:10,fontWeight:700,color:J.text,fontFamily:"monospace",maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.campaign_name}</td>
-                      <td style={{padding:"9px 10px",textAlign:"center",fontSize:11,fontWeight:700,color:J.cyan,fontFamily:"monospace"}}>{fmt(parseFloat(c.spend||0))}</td>
-                      <td style={{padding:"9px 10px",textAlign:"center"}}><RoasBadge roas={c.roas}/></td>
-                      <td style={{padding:"9px 10px",textAlign:"center"}}><span style={{padding:"2px 6px",borderRadius:2,fontSize:9,fontFamily:"monospace",background:ctr>=1?J.green+"18":J.red+"18",color:ctr>=1?J.green:J.red}}>{ctr.toFixed(2)}%</span></td>
-                      <td style={{padding:"9px 10px",textAlign:"center",fontSize:10,color:cpc<=20?J.green:cpc<=50?J.yellow:J.red,fontFamily:"monospace",fontWeight:700}}>₹{cpc.toFixed(0)}</td>
+                  {data.sort((a,b)=>parseFloat(b.spend||0)-parseFloat(a.spend||0)).map((c,i)=>{
+                    const ctr=parseFloat(c.ctr||0);
+                    const fullCamp=platform==="meta"?campaigns.find(x=>x.id===c.campaign_id||x.name===c.campaign_name):null;
+                    return(<tr key={i} className="trow" onClick={()=>setSelectedCampaign(fullCamp?{...fullCamp,...c,platform}:{...c,platform})} style={{borderBottom:`1px solid ${J.border}`}}>
+                      <td style={{padding:"8px 10px",fontSize:10,fontWeight:700,color:J.text,fontFamily:"monospace",maxWidth:130,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.campaign_name||c.name}</td>
+                      <td style={{padding:"8px 10px",textAlign:"center",fontSize:10,fontWeight:700,color,fontFamily:"monospace"}}>{fmt(parseFloat(c.spend||0))}</td>
+                      <td style={{padding:"8px 10px",textAlign:"center"}}><RoasBadge roas={c.roas}/></td>
+                      <td style={{padding:"8px 10px",textAlign:"center"}}><span style={{padding:"2px 6px",borderRadius:2,fontSize:9,fontFamily:"monospace",background:ctr>=1?J.green+"18":J.red+"18",color:ctr>=1?J.green:J.red}}>{ctr.toFixed(2)}%</span></td>
                     </tr>);
                   })}
                 </tbody>
-              </table>
-            </div>}
-          </JCard>
-          {/* GOOGLE INTEL */}
-          <JCard style={{overflow:"hidden"}} glow accent={J.google}>
-            <div style={{padding:"12px 18px",borderBottom:`1px solid ${J.border}`,display:"flex",alignItems:"center",gap:8}}>
-              <div style={{fontSize:10,color:J.google,letterSpacing:2,fontFamily:"monospace",textShadow:`0 0 6px ${J.google}88`}}>◈ GOOGLE INTEL</div>
-              <span style={{fontSize:8,color:J.muted,fontFamily:"monospace"}}>{googleCampaigns.length} campaigns · click to expand</span>
-            </div>
-            {googleLoading?<div style={{padding:30,textAlign:"center",color:J.muted,fontFamily:"monospace",fontSize:10}}>SYNCING...</div>:
-            googleCampaigns.length===0?<div style={{padding:30,textAlign:"center",color:J.muted,fontFamily:"monospace",fontSize:10}}>NO GOOGLE DATA<br/><span style={{fontSize:9,opacity:.6}}>Check Google credentials in Render</span></div>:
-            <div style={{overflowX:"auto"}}>
-              <table style={{width:"100%",borderCollapse:"collapse"}}>
-                <thead><tr style={{background:J.google+"04",borderBottom:`1px solid ${J.border}`}}>
-                  {["CAMPAIGN","SPEND","ROAS","CTR","CPC"].map(h=><th key={h} style={{padding:"8px 10px",fontSize:7,color:J.muted,textAlign:h==="CAMPAIGN"?"left":"center",fontFamily:"monospace",letterSpacing:2}}>{h}</th>)}
-                </tr></thead>
-                <tbody>
-                  {googleCampaigns.sort((a,b)=>parseFloat(b.spend||0)-parseFloat(a.spend||0)).map((c,i)=>{
-                    const ctr=parseFloat(c.ctr||0),cpc=parseFloat(c.cpc||0);
-                    return(<tr key={i} className="trow" onClick={()=>setSelectedCampaign({...c,platform:"google"})} style={{borderBottom:`1px solid ${J.border}`}}>
-                      <td style={{padding:"9px 10px",fontSize:10,fontWeight:700,color:J.text,fontFamily:"monospace",maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name||c.campaign_name}</td>
-                      <td style={{padding:"9px 10px",textAlign:"center",fontSize:11,fontWeight:700,color:J.google,fontFamily:"monospace"}}>{fmt(parseFloat(c.spend||0))}</td>
-                      <td style={{padding:"9px 10px",textAlign:"center"}}><RoasBadge roas={c.roas}/></td>
-                      <td style={{padding:"9px 10px",textAlign:"center"}}><span style={{padding:"2px 6px",borderRadius:2,fontSize:9,fontFamily:"monospace",background:ctr>=1?J.green+"18":J.red+"18",color:ctr>=1?J.green:J.red}}>{ctr.toFixed(2)}%</span></td>
-                      <td style={{padding:"9px 10px",textAlign:"center",fontSize:10,color:cpc<=20?J.green:cpc<=50?J.yellow:J.red,fontFamily:"monospace",fontWeight:700}}>₹{cpc.toFixed(0)}</td>
-                    </tr>);
-                  })}
-                </tbody>
-              </table>
-            </div>}
-          </JCard>
+              </table>}
+            </JCard>
+          ))}
         </div>}
       </div>
 
       {/* BOTTOM BAR */}
       <div style={{position:"fixed",bottom:0,left:0,right:aiOpen?370:0,background:J.bg+"F0",borderTop:`1px solid ${J.border}`,padding:"5px 24px",display:"flex",alignItems:"center",gap:12,zIndex:40,backdropFilter:"blur(10px)",transition:"right .3s"}}>
         <div style={{position:"absolute",top:0,left:0,right:0,height:1,background:`linear-gradient(90deg,transparent,${J.cyan}44,transparent)`}}/>
-        <div style={{width:5,height:5,borderRadius:"50%",background:J.green,animation:"pulse 2s infinite",boxShadow:`0 0 6px ${J.green}`}}/>
-        <span style={{fontSize:8,color:J.meta,fontFamily:"monospace"}}>META {metaLoading?"...":"✓"}</span>
-        <span style={{fontSize:8,color:J.google,fontFamily:"monospace"}}>GOOGLE {googleLoading?"...":"✓"}</span>
+        <div style={{width:5,height:5,borderRadius:"50%",background:J.green,animation:"pulse 2s infinite"}}/>
+        <span style={{fontSize:8,color:J.meta,fontFamily:"monospace"}}>META {loadingMeta?"…":"✓"}</span>
+        <span style={{fontSize:8,color:J.google,fontFamily:"monospace"}}>GOOGLE {loadingGoogle?"…":"✓"}</span>
+        <span style={{fontSize:8,color:J.snap,fontFamily:"monospace"}}>SNAP {loadingSnap?"…":"✓"}</span>
         <span style={{fontSize:8,color:J.border}}>·</span>
         <span style={{fontSize:8,color:J.muted,fontFamily:"monospace"}}>{allCampaigns.length} CAMPAIGNS</span>
         <span style={{fontSize:8,color:J.border}}>·</span>
         <span style={{fontSize:8,color:J.cyan,fontFamily:"monospace"}}>{DATE_PRESETS.find(d=>d.value===datePreset)?.label}</span>
         {blendedRoas&&<><span style={{fontSize:8,color:J.border}}>·</span><span style={{fontSize:8,color:roasColor(blendedRoas),fontFamily:"monospace",fontWeight:700}}>ROAS {blendedRoas.toFixed(2)}x</span></>}
-        <span style={{marginLeft:"auto",fontSize:8,color:J.cyan,fontFamily:"monospace",cursor:"pointer",textShadow:J.cyanGlowSm}} onClick={()=>fetchData(datePreset,dateSince,dateUntil)}>↻ SYNC</span>
+        <span style={{marginLeft:"auto",fontSize:8,color:J.cyan,fontFamily:"monospace",cursor:"pointer",textShadow:J.cyanGlowSm}} onClick={()=>fetchAll(datePreset,dateSince,dateUntil)}>↻ SYNC</span>
       </div>
 
-      {selectedCampaign&&<CampaignDrawer campaign={selectedCampaign} insights={metaInsights} googleCampaigns={googleCampaigns} datePreset={datePreset} dateSince={dateSince} dateUntil={dateUntil} onClose={()=>setSelectedCampaign(null)}/>}
-      {aiOpen&&<AIPanel onClose={()=>setAiOpen(false)} metaInsights={metaInsights} googleInsights={googleSummary} campaigns={campaigns} datePreset={datePreset}/>}
+      {selectedCampaign&&<CampaignDrawer campaign={selectedCampaign} metaInsights={metaInsights} datePreset={datePreset} dateSince={dateSince} dateUntil={dateUntil} onClose={()=>setSelectedCampaign(null)}/>}
+      {aiOpen&&<AIPanel onClose={()=>setAiOpen(false)} metaInsights={metaInsights} googleSummary={googleSummary} snapSummary={snapSummary} campaigns={campaigns} datePreset={datePreset}/>}
     </div>
   );
 }
