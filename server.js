@@ -18,6 +18,7 @@ const SNAP_CLIENT_ID       = process.env.SNAP_CLIENT_ID;
 const SNAP_CLIENT_SECRET   = process.env.SNAP_CLIENT_SECRET;
 const SNAP_REFRESH_TOKEN   = process.env.SNAP_REFRESH_TOKEN;
 const SNAP_AD_ACCOUNT_ID   = process.env.SNAP_AD_ACCOUNT_ID;
+const ANTHROPIC_API_KEY    = process.env.ANTHROPIC_API_KEY;  // ← FIXED: moved to top
 
 const getMetaId = () => (META_AD_ACCOUNT_ID || '').replace('act_', '');
 
@@ -37,6 +38,7 @@ app.get('/debug', (req, res) => {
     snap_client_secret: SNAP_CLIENT_SECRET ? SNAP_CLIENT_SECRET.slice(0,8)+'...' : 'MISSING',
     snap_refresh_token: SNAP_REFRESH_TOKEN ? SNAP_REFRESH_TOKEN.slice(0,15)+'...' : 'MISSING',
     snap_ad_account_id: SNAP_AD_ACCOUNT_ID || 'MISSING',
+    anthropic_key: ANTHROPIC_API_KEY ? ANTHROPIC_API_KEY.slice(0,10)+'...' : 'MISSING',  // ← ADDED
   });
 });
 
@@ -45,7 +47,7 @@ app.post('/api/chat', async (req, res) => {
   try {
     const { system, messages } = req.body;
     const r = await axios.post('https://api.anthropic.com/v1/messages',
-      { model: 'claude-sonnet-4-20250514', max_tokens: 1000, system, messages },
+      { model: 'claude-sonnet-4-5', max_tokens: 1000, system, messages },  // ← FIXED model name
       { headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' } }
     );
     res.json(r.data);
@@ -280,13 +282,11 @@ app.get('/api/snapchat/campaigns', async (req, res) => {
     const { date_preset, date_since, date_until } = req.query;
     const token = await getSnapToken();
     const adAccountId = SNAP_AD_ACCOUNT_ID;
-    // Get campaigns
     const campRes = await axios.get(
       `https://adsapi.snapchat.com/v1/adaccounts/${adAccountId}/campaigns`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
     const campaigns = (campRes.data.campaigns || []).map(c => c.campaign);
-    // Get stats for each campaign
     const dr = snapDateRange(date_preset, date_since, date_until);
     const statsRes = await axios.get(
       `https://adsapi.snapchat.com/v1/adaccounts/${adAccountId}/stats`,
@@ -358,7 +358,6 @@ app.get('/api/snapchat/insights', async (req, res) => {
 
 
 // ── AI AGENT ─────────────────────────────────────────────────
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const agentReports = [];
 let agentRunning = false;
 
@@ -428,7 +427,7 @@ ALL CAMPAIGNS (top 20 by spend):
 ${campaigns.sort((a,b)=>parseFloat(b.spend)-parseFloat(a.spend)).slice(0,20).map(c=>`- ${c.campaign_name}: ₹${parseFloat(c.spend).toFixed(0)} | ROAS ${c.roas?c.roas.toFixed(2)+'x':'N/A'} | CTR ${parseFloat(c.ctr||0).toFixed(2)}% | Freq ${parseFloat(c.frequency||0).toFixed(1)}`).join('\n')}`;
 
     const claudeRes = await axios.post('https://api.anthropic.com/v1/messages',
-      { model: 'claude-sonnet-4-20250514', max_tokens: 1500, system: AGENT_SYSTEM_PROMPT, messages: [{ role: 'user', content: dataCtx }] },
+      { model: 'claude-sonnet-4-5', max_tokens: 1500, system: AGENT_SYSTEM_PROMPT, messages: [{ role: 'user', content: dataCtx }] },  // ← FIXED model name
       { headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' } }
     );
     const analysis = claudeRes.data.content?.find(b => b.type === 'text')?.text || 'Analysis failed.';
