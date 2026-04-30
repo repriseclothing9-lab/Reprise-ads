@@ -10,7 +10,36 @@ const J = {
   border:"#00D4FF18",borderBright:"#00D4FF55",text:"#E0F4FF",muted:"#3A7A94",grid:"#00D4FF06",
 };
 const PLATFORMS = { meta: J.meta, google: J.google, snapchat: J.snap };
-const SYSTEM_PROMPT=`You are JARVIS — Reprise's elite paid growth AI for an Indian D2C clothing brand. You have Meta, Google AND Snapchat Ads data. Respond: 🔍 DIAGNOSIS → ⚡ THREAT → 🎯 ACTION → 🧪 EXPERIMENT → 📊 MONITOR → 💰 COMMAND. Sharp, decisive, occasional dry wit.`;
+
+// ── JARVIS SYSTEM PROMPT — enriched with Reprise context ──
+const SYSTEM_PROMPT = `You are JARVIS — the elite paid growth AI for Reprise, a D2C premium knitwear & apparel brand founded by Ankush, based in Ludhiana, India. You have live access to Meta, Google, and Snapchat Ads data for the Reprise ad account.
+
+BRAND CONTEXT:
+- Reprise sells men's and women's premium everyday wear: oversized tees, polos, striped tees, coord sets, suede jackets
+- Price range: ₹499–₹1,599. Positioning: "fit · fabric · honesty"
+- Channels: Shopify (reprise.co.in), Myntra, Flipkart, FLXY retail store (Amanora, Pune)
+- Manufacturing: In-house at Asha Creations, Ludhiana (100+ workers, 200+ knitting machines)
+- Target audience: Gen Z and millennials, 18–34, urban India
+
+ADS CONTEXT (from live dashboard):
+- Current blended ROAS is ~0.92x — BELOW breakeven. This is the #1 issue.
+- Meta is the only active platform (Google and Snapchat not yet connected)
+- Known campaigns: "women__TOF__interest__CBO on purchase" (1.77x ROAS — STAR), "25__TOF__interest__CBO off_purchase__" (1.70x), "New Sales Campaign" (1.60x)
+- CPC is dangerously low at ₹4 with only 1.21% CTR — likely broad targeting with low purchase intent
+- Total Meta spend ≈ ₹36.4K with ₹33.3K revenue = loss-making at current scale
+- COGS benchmark: ₹320/unit. AOV target: ₹900+. CAC benchmark: <₹400
+
+KNOWN ISSUES TO WATCH:
+- Blended ROAS <1 = every rupee spent loses money. Must identify and pause burning campaigns immediately.
+- Creative fatigue is likely — CTR of 1.21% is acceptable but purchase conversion is weak
+- Women's TOF campaigns showing stronger ROAS than men's
+- No Google/Snap data = full spend concentration risk on Meta
+
+YOUR RESPONSE FORMAT:
+🔍 DIAGNOSIS → ⚡ THREAT LEVEL → 🎯 ACTION (specific campaigns, budgets, ₹ numbers) → 🧪 EXPERIMENT → 📊 MONITOR → 💰 COMMAND
+
+Be sharp, decisive, use INR (₹), reference actual campaign names when visible in the data. Occasional dry wit is fine. Never be vague — Ankush needs commands, not commentary.`;
+
 const DATE_PRESETS=[{label:"TODAY",value:"today"},{label:"7D",value:"last_7d"},{label:"14D",value:"last_14d"},{label:"30D",value:"last_30d"},{label:"60D",value:"last_60d"},{label:"90D",value:"last_90d"},{label:"CUSTOM",value:"custom"}];
 const fmt=n=>n>=100000?`₹${(n/100000).toFixed(1)}L`:n>=1000?`₹${(n/1000).toFixed(1)}K`:`₹${Math.round(n||0)}`;
 const fmtN=n=>n>=1000000?`${(n/1000000).toFixed(1)}M`:n>=1000?`${(n/1000).toFixed(1)}K`:`${n||0}`;
@@ -330,38 +359,95 @@ function CampaignDrawer({campaign,metaInsights,datePreset,dateSince,dateUntil,on
   );
 }
 
+// ── JARVIS AI PANEL — FIXED: calls Anthropic API directly ──
 function AIPanel({onClose,metaInsights,googleSummary,snapSummary,campaigns,datePreset}){
   const metaSpend=metaInsights.reduce((a,i)=>a+parseFloat(i.spend||0),0);
+  const metaRevenue=metaInsights.reduce((a,i)=>a+(i.revenue||0),0);
+  const metaRoasArr=metaInsights.filter(i=>parseFloat(i.roas)>0);
+  const metaAvgRoas=metaRoasArr.length>0?(metaRoasArr.reduce((a,i)=>a+parseFloat(i.roas),0)/metaRoasArr.length).toFixed(2):null;
   const googleSpend=googleSummary?.spend||0;
   const snapSpend=snapSummary?.spend||0;
   const total=metaSpend+googleSpend+snapSpend;
-  const[msgs,setMsgs]=useState([{role:"assistant",content:`JARVIS ONLINE — 3 PLATFORM MODE\n\nMeta: ${fmt(metaSpend)} spend\nGoogle: ${googleSpend>0?fmt(googleSpend)+" spend":"Not connected"}\nSnapchat: ${snapSpend>0?fmt(snapSpend)+" spend":"Not connected"}\n\n⚡ Awaiting command.`}]);
-  const[input,setInput]=useState("");const[loading,setLoading]=useState(false);const ref=useRef(null);
+
+  const[msgs,setMsgs]=useState([{role:"assistant",content:`JARVIS ONLINE — 3 PLATFORM MODE\n\nMeta: ${fmt(metaSpend)} spend${metaAvgRoas?` · Avg ROAS: ${metaAvgRoas}x`:""}\nGoogle: ${googleSpend>0?fmt(googleSpend)+" spend":"Not connected"}\nSnapchat: ${snapSpend>0?fmt(snapSpend)+" spend":"Not connected"}\n\n${total>0&&metaSpend/total>0.9?"⚠️ 100% budget on Meta — concentration risk.\n\n":""}⚡ Awaiting command.`}]);
+  const[input,setInput]=useState("");
+  const[loading,setLoading]=useState(false);
+  const ref=useRef(null);
   useEffect(()=>{ref.current?.scrollIntoView({behavior:"smooth"})},[msgs,loading]);
+
   const QUICK=["Compare all platforms","Best ROAS platform?","Where to shift budget?","Threat assessment"];
+
   const send=async(text)=>{
-    const ctx=`\n\nREPRISE (${datePreset}): META spend=${fmt(metaSpend)} roas=${metaInsights.filter(i=>i.roas).length>0?(metaInsights.filter(i=>i.roas).reduce((a,i)=>a+parseFloat(i.roas),0)/metaInsights.filter(i=>i.roas).length).toFixed(2)+"x":"N/A"} | GOOGLE spend=${fmt(googleSpend)} roas=${googleSummary?.roas?.toFixed(2)||"N/A"}x | SNAP spend=${fmt(snapSpend)} roas=${snapSummary?.roas?.toFixed(2)||"N/A"}x | Total=${fmt(total)} | Command: ${text}`;
-    const nm=[...msgs,{role:"user",content:text}];setMsgs(nm);setInput("");setLoading(true);
+    // Build live context snapshot from current dashboard data
+    const topCampaigns=metaInsights
+      .filter(i=>parseFloat(i.roas)>0)
+      .sort((a,b)=>parseFloat(b.roas)-parseFloat(a.roas))
+      .slice(0,5)
+      .map(i=>`${i.campaign_name||"Campaign"}: ROAS ${parseFloat(i.roas).toFixed(2)}x, Spend ₹${parseFloat(i.spend||0).toFixed(0)}`)
+      .join(" | ");
+
+    const ctx=`LIVE DATA SNAPSHOT (${datePreset}):
+Meta Spend: ${fmt(metaSpend)} | Meta Revenue: ${metaRevenue>0?fmt(metaRevenue):"N/A"} | Meta Avg ROAS: ${metaAvgRoas?metaAvgRoas+"x":"N/A"}
+Google Spend: ${googleSpend>0?fmt(googleSpend):"Not connected"} | Snap Spend: ${snapSpend>0?fmt(snapSpend):"Not connected"}
+Total Spend: ${fmt(total)} | Blended ROAS: ${total>0&&(metaRevenue+( googleSummary?.revenue||0))>0?(((metaRevenue+(googleSummary?.revenue||0))/total).toFixed(2)+"x"):"N/A"}
+Top Campaigns by ROAS: ${topCampaigns||"No ROAS data available"}
+Total Active Campaigns: ${campaigns.length}
+
+USER COMMAND: ${text}`;
+
+    const nm=[...msgs,{role:"user",content:text}];
+    setMsgs(nm);
+    setInput("");
+    setLoading(true);
+
     try{
-      const r=await fetch(`${API_URL}/api/chat`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({system:SYSTEM_PROMPT,messages:[...nm.slice(0,-1),{role:"user",content:ctx}]})});
-      const d=await r.json();
-      setMsgs(p=>[...p,{role:"assistant",content:d.content?.find(b=>b.type==="text")?.text||"Error."}]);
-    }catch{setMsgs(p=>[...p,{role:"assistant",content:"CONNECTION INTERRUPTED."}]);}
-    finally{setLoading(false);}
+      // ── DIRECT ANTHROPIC API CALL (bypasses Render backend) ──
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 1000,
+          system: SYSTEM_PROMPT,
+          messages: [
+            // Include conversation history (exclude initial greeting)
+            ...nm.slice(1,-1).map(m=>({role:m.role,content:m.content})),
+            // Final message with live context injected
+            {role:"user", content: ctx}
+          ]
+        })
+      });
+
+      if(!response.ok){
+        const errText = await response.text();
+        throw new Error(`API ${response.status}: ${errText}`);
+      }
+
+      const data = await response.json();
+      const replyText = data.content?.find(b=>b.type==="text")?.text || "No response received.";
+      setMsgs(p=>[...p,{role:"assistant",content:replyText}]);
+    }catch(err){
+      console.error("JARVIS API error:",err);
+      setMsgs(p=>[...p,{role:"assistant",content:`CONNECTION ERROR: ${err.message}\n\nCheck console for details.`}]);
+    }finally{
+      setLoading(false);
+    }
   };
+
   const renderMsg=(text)=>text.split('\n').map((line,i)=>{
     if(/^(🔍|⚡|🎯|🧪|📊|💰|JARVIS)/.test(line))return<div key={i} style={{color:J.cyan,fontWeight:700,fontSize:11,marginTop:10,marginBottom:2,fontFamily:"monospace"}}>{line}</div>;
     if(line.includes('**')){const p=line.split(/\*\*(.*?)\*\*/g);return<div key={i} style={{marginBottom:2,fontSize:11}}>{p.map((s,j)=>j%2===1?<strong key={j} style={{color:J.cyan}}>{s}</strong>:<span key={j} style={{color:J.muted}}>{s}</span>)}</div>;}
-    if(/^[-•]/.test(line.trim()))return<div key={i} style={{paddingLeft:12,fontSize:10,color:J.muted,marginBottom:2}}><span style={{color:J.cyan}}>› </span>{line.replace(/^[-•]\s*/,"")}</div>;
+    if(/^[-•›]/.test(line.trim()))return<div key={i} style={{paddingLeft:12,fontSize:10,color:J.muted,marginBottom:2}}><span style={{color:J.cyan}}>› </span>{line.replace(/^[-•›]\s*/,"")}</div>;
     if(line.trim()==="")return<div key={i} style={{height:4}}/>;
     return<div key={i} style={{fontSize:10,color:"#7AB8CC",lineHeight:1.7,fontFamily:"monospace"}}>{line}</div>;
   });
+
   return(
     <div style={{position:"fixed",right:0,top:0,bottom:0,width:370,background:J.bg,borderLeft:`1px solid ${J.borderBright}`,display:"flex",flexDirection:"column",zIndex:100,boxShadow:`-8px 0 40px ${J.cyan}18`}}>
       <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:`linear-gradient(90deg,transparent,${J.cyan},transparent)`}}/>
       <div style={{padding:"12px 16px",borderBottom:`1px solid ${J.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
-          <div style={{width:34,height:34,borderRadius:"50%",border:`2px solid ${J.cyan}`,display:"flex",alignItems:"center",justifyContent:"center",background:J.cyan+"0A"}}><div style={{width:12,height:12,borderRadius:"50%",background:J.cyan}}/></div>
+          <div style={{width:34,height:34,borderRadius:"50%",border:`2px solid ${J.cyan}`,display:"flex",alignItems:"center",justifyContent:"center",background:J.cyan+"0A"}}><div style={{width:12,height:12,borderRadius:"50%",background:J.cyan,animation:"pulse 2s infinite",boxShadow:`0 0 8px ${J.cyan}`}}/></div>
           <div>
             <div style={{fontWeight:700,fontSize:12,color:J.cyan,fontFamily:"monospace",letterSpacing:3}}>J.A.R.V.I.S</div>
             <div style={{fontSize:8,color:J.muted,letterSpacing:1.5,fontFamily:"monospace"}}>META · GOOGLE · SNAPCHAT</div>
@@ -382,13 +468,15 @@ function AIPanel({onClose,metaInsights,googleSummary,snapSummary,campaigns,dateP
         <div ref={ref}/>
       </div>
       <div style={{padding:"6px 14px",display:"flex",gap:5,flexWrap:"wrap",borderTop:`1px solid ${J.border}`}}>
-        {QUICK.map((q,i)=><button key={i} onClick={()=>send(q)} disabled={loading} style={{padding:"4px 9px",background:J.cyan+"0A",border:`1px solid ${J.cyan}33`,borderRadius:2,color:J.cyan,fontSize:9,cursor:"pointer",fontFamily:"monospace"}}>{q}</button>)}
+        {QUICK.map((q,i)=><button key={i} onClick={()=>send(q)} disabled={loading} style={{padding:"4px 9px",background:J.cyan+"0A",border:`1px solid ${J.cyan}33`,borderRadius:2,color:J.cyan,fontSize:9,cursor:"pointer",fontFamily:"monospace",opacity:loading?.5:1}}>
+          {q}
+        </button>)}
       </div>
       <div style={{padding:"8px 14px 14px"}}>
         <div style={{display:"flex",gap:8,background:J.bg2,border:`1px solid ${J.borderBright}`,borderRadius:3,padding:"7px 11px"}}>
-          <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&input.trim()&&!loading&&send(input.trim())} placeholder="ENTER COMMAND..." style={{flex:1,background:"none",border:"none",color:J.cyan,fontSize:11,outline:"none",fontFamily:"monospace",letterSpacing:1}}/>
-          <button onClick={()=>input.trim()&&!loading&&send(input.trim())} disabled={!input.trim()||loading} style={{width:28,height:28,borderRadius:2,background:input.trim()?J.cyan+"22":"transparent",border:`1px solid ${input.trim()?J.cyan:J.border}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none"><path d="M22 2L11 13M22 2L15 22L11 13L2 9L22 2Z" stroke={input.trim()?J.cyan:J.muted} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&input.trim()&&!loading&&send(input.trim())} placeholder="ENTER COMMAND..." style={{flex:1,background:"none",border:"none",color:J.cyan,fontSize:11,outline:"none",fontFamily:"monospace",letterSpacing:1}} disabled={loading}/>
+          <button onClick={()=>input.trim()&&!loading&&send(input.trim())} disabled={!input.trim()||loading} style={{width:28,height:28,borderRadius:2,background:input.trim()&&!loading?J.cyan+"22":"transparent",border:`1px solid ${input.trim()&&!loading?J.cyan:J.border}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none"><path d="M22 2L11 13M22 2L15 22L11 13L2 9L22 2Z" stroke={input.trim()&&!loading?J.cyan:J.muted} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
           </button>
         </div>
       </div>
@@ -462,7 +550,6 @@ export default function App(){
   const handlePresetSelect=(preset)=>{setDatePreset(preset);if(preset!=="custom")fetchAll(preset,"","");};
   const handleCustomApply=()=>{if(dateSince&&dateUntil)fetchAll("custom",dateSince,dateUntil);};
 
-  // Aggregates
   const metaSpend=metaInsights.reduce((a,i)=>a+parseFloat(i.spend||0),0);
   const metaRevenue=metaInsights.reduce((a,i)=>a+(i.revenue||0),0);
   const googleSpend=googleSummary?.spend||0;
@@ -578,7 +665,6 @@ export default function App(){
 
       <div style={{padding:"18px 24px 60px",position:"relative",zIndex:1,animation:"fadeUp .3s ease"}}>
         {tab==="overview"&&<>
-          {/* STATUS */}
           <div style={{display:"flex",gap:8,marginBottom:14,padding:"7px 14px",background:J.bg2,border:`1px solid ${J.border}`,borderRadius:2,alignItems:"center"}}>
             <div style={{width:5,height:5,borderRadius:"50%",background:J.green,animation:"pulse 2s infinite",boxShadow:`0 0 6px ${J.green}`}}/>
             <span style={{fontFamily:"monospace",fontSize:9,color:J.muted,letterSpacing:1.5}}>
@@ -586,7 +672,6 @@ export default function App(){
             </span>
           </div>
 
-          {/* KPI ROW */}
           <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:8,marginBottom:14}}>
             {[
               ["TOTAL SPEND",fmt(totalSpend),J.cyan],
@@ -604,14 +689,12 @@ export default function App(){
             ))}
           </div>
 
-          {/* 3 PLATFORM CARDS */}
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14,marginBottom:14}}>
             <PlatformCard platform="meta" data={metaInsights} loading={loadingMeta}/>
             <PlatformCard platform="google" data={googleSummary} loading={loadingGoogle}/>
             <PlatformCard platform="snapchat" data={snapSummary} loading={loadingSnap}/>
           </div>
 
-          {/* CHARTS */}
           <div style={{display:"grid",gridTemplateColumns:"1.6fr 1fr",gap:14}}>
             <JCard style={{padding:18}} glow>
               <div style={{fontSize:9,color:J.cyan,letterSpacing:2,marginBottom:14,fontFamily:"monospace",textShadow:J.cyanGlowSm}}>◈ PLATFORM SPEND COMPARISON</div>
@@ -649,7 +732,6 @@ export default function App(){
           </div>
         </>}
 
-        {/* CAMPAIGNS */}
         {tab==="campaigns"&&<JCard style={{overflow:"hidden"}} glow>
           <div style={{padding:"12px 18px",borderBottom:`1px solid ${J.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
             <div style={{fontSize:10,color:J.cyan,letterSpacing:2,fontFamily:"monospace",textShadow:J.cyanGlowSm}}>◈ ALL CAMPAIGNS — {filteredCampaigns.length} ENTRIES</div>
@@ -691,7 +773,6 @@ export default function App(){
           </div>}
         </JCard>}
 
-        {/* INTEL */}
         {tab==="intel"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14}}>
           {[
             {platform:"meta",color:J.meta,label:"META INTEL",data:metaInsights,loading:loadingMeta},
@@ -725,10 +806,8 @@ export default function App(){
             </JCard>
           ))}
         </div>}
-      </div>}
 
-      {tab==="agent"&&<div style={{padding:"0 0 60px"}}>
-          {/* AGENT HEADER */}
+        {tab==="agent"&&<div style={{padding:"0 0 60px"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
             <div>
               <div style={{fontSize:16,fontWeight:900,color:J.cyan,fontFamily:"monospace",letterSpacing:2,textShadow:J.cyanGlow}}>⚡ J.A.R.V.I.S DAILY AGENT</div>
@@ -742,7 +821,6 @@ export default function App(){
             </button>
           </div>
 
-          {/* HOW IT WORKS */}
           {!agentReport&&!agentRunning&&<JCard style={{padding:24,marginBottom:16,textAlign:"center"}} glow>
             <div style={{fontSize:40,marginBottom:12}}>🤖</div>
             <div style={{fontSize:14,color:J.cyan,fontFamily:"monospace",fontWeight:700,marginBottom:8,textShadow:J.cyanGlowSm}}>AGENT NOT YET RUN</div>
@@ -765,7 +843,6 @@ export default function App(){
             </button>
           </JCard>}
 
-          {/* RUNNING STATE */}
           {agentRunning&&<JCard style={{padding:40,textAlign:"center",marginBottom:16}} glow>
             <div style={{fontSize:11,color:J.yellow,fontFamily:"monospace",letterSpacing:2,marginBottom:16,animation:"pulse 2s infinite"}}>🤖 JARVIS AGENT ANALYSING YOUR CAMPAIGNS...</div>
             <div style={{display:"flex",gap:8,justifyContent:"center",marginBottom:12}}>
@@ -774,7 +851,6 @@ export default function App(){
             <div style={{fontSize:10,color:J.muted,fontFamily:"monospace"}}>Fetching campaign data → Analysing with Claude → Generating report</div>
           </JCard>}
 
-          {/* LATEST REPORT */}
           {agentReport&&<JCard style={{padding:20,marginBottom:16}} glow>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
               <div>
@@ -790,7 +866,6 @@ export default function App(){
                 ))}
               </div>}
             </div>
-            {/* Analysis text */}
             <div style={{background:J.bg,border:`1px solid ${J.border}`,borderRadius:3,padding:16}}>
               {agentReport.analysis.split("\n").map((line,i)=>{
                 if(/^(🔴|📊|⚡|🧪|💰)/.test(line))return<div key={i} style={{color:J.cyan,fontWeight:800,fontSize:12,marginTop:16,marginBottom:6,fontFamily:"monospace",textShadow:J.cyanGlowSm,borderBottom:`1px solid ${J.border}`,paddingBottom:4}}>{line}</div>;
@@ -801,7 +876,6 @@ export default function App(){
             </div>
           </JCard>}
 
-          {/* HISTORY */}
           {agentHistory.length>1&&<JCard style={{padding:0,overflow:"hidden"}} glow>
             <div style={{padding:"12px 16px",borderBottom:`1px solid ${J.border}`}}>
               <div style={{fontSize:9,color:J.cyan,letterSpacing:2,fontFamily:"monospace",textShadow:J.cyanGlowSm}}>◈ REPORT HISTORY — LAST {agentHistory.length} DAYS</div>
@@ -823,6 +897,7 @@ export default function App(){
             ))}
           </JCard>}
         </div>}
+      </div>
 
       {/* BOTTOM BAR */}
       <div style={{position:"fixed",bottom:0,left:0,right:aiOpen?370:0,background:J.bg+"F0",borderTop:`1px solid ${J.border}`,padding:"5px 24px",display:"flex",alignItems:"center",gap:12,zIndex:40,backdropFilter:"blur(10px)",transition:"right .3s"}}>
