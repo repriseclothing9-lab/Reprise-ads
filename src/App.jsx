@@ -490,8 +490,44 @@ export default function App(){
 
   const allRoas=[...metaInsights.filter(i=>i.roas).map(i=>({...i,platform:"meta"})),...googleCampaigns.filter(i=>i.roas).map(i=>({...i,platform:"google"})),...snapCampaigns.filter(i=>i.roas).map(i=>({...i,platform:"snapchat"}))].sort((a,b)=>parseFloat(b.roas)-parseFloat(a.roas));
 
-  const TABS=[{id:"overview",label:"OVERVIEW"},{id:"campaigns",label:`CAMPAIGNS [${allCampaigns.length}]`},{id:"intel",label:"INTEL"}];
+  const TABS=[{id:"overview",label:"OVERVIEW"},{id:"campaigns",label:`CAMPAIGNS [${allCampaigns.length}]`},{id:"intel",label:"INTEL"},{id:"agent",label:"⚡ AGENT"}];
   const trendData=Array.from({length:14},(_,i)=>({day:`D${i+1}`,meta:Math.round(metaSpend/14*(0.6+Math.random()*.8)),google:Math.round(googleSpend/14*(0.6+Math.random()*.8)),snap:Math.round(snapSpend/14*(0.6+Math.random()*.8))}));
+
+  const[agentReport,setAgentReport]=useState(null);
+  const[agentHistory,setAgentHistory]=useState([]);
+  const[agentRunning,setAgentRunning]=useState(false);
+  const[agentStatus,setAgentStatus]=useState(null);
+
+  const fetchAgentData=async()=>{
+    try{
+      const[latest,history,status]=await Promise.all([
+        fetch(`${API_URL}/api/agent/latest`),
+        fetch(`${API_URL}/api/agent/history`),
+        fetch(`${API_URL}/api/agent/status`),
+      ]);
+      const ld=await latest.json(),hd=await history.json(),sd=await status.json();
+      if(ld.report)setAgentReport(ld.report);
+      if(hd.reports)setAgentHistory(hd.reports);
+      setAgentStatus(sd);
+    }catch(e){console.log(e);}
+  };
+
+  const triggerAgent=async()=>{
+    setAgentRunning(true);
+    try{
+      await fetch(`${API_URL}/api/agent/run`,{method:"POST"});
+      let attempts=0;
+      const poll=setInterval(async()=>{
+        attempts++;
+        await fetchAgentData();
+        if(attempts>=20){clearInterval(poll);setAgentRunning(false);}
+      },3000);
+      setTimeout(()=>setAgentRunning(false),65000);
+    }catch(e){setAgentRunning(false);}
+  };
+
+  useEffect(()=>{fetchAgentData();},[]);
+  useEffect(()=>{if(tab==="agent")fetchAgentData();},[tab]);
 
   return(
     <div style={{fontFamily:"'Courier New',monospace",background:J.bg,minHeight:"100vh",color:J.text,paddingRight:aiOpen?370:0,transition:"padding-right .3s",position:"relative"}}>
@@ -689,9 +725,9 @@ export default function App(){
             </JCard>
           ))}
         </div>}
-      </div>
+      </div>}
 
-        {tab==="agent"&&<div>
+      {tab==="agent"&&<div style={{padding:"0 0 60px"}}>
           {/* AGENT HEADER */}
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
             <div>
