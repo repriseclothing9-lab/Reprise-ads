@@ -114,7 +114,7 @@ async function googleQuery(query) {
   console.log('Google query — cid:', cid, 'login-cid:', loginCid);
   try {
     const r = await axios.post(
-      `https://googleads.googleapis.com/v19/customers/${cid}/googleAds:search`,
+      `https://googleads.googleapis.com/v18/customers/${cid}/googleAds:search`,
       { query },
       { headers: {
           'Authorization': `Bearer ${token}`,
