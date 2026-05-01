@@ -114,7 +114,7 @@ async function googleQuery(query) {
   console.log('Google query — cid:', cid, 'login-cid:', loginCid);
   try {
     const r = await axios.post(
-      `https://googleads.googleapis.com/v16/customers/${cid}/googleAds:search`,
+      `https://googleads.googleapis.com/v19/customers/${cid}/googleAds:search`,
       { query },
       { headers: {
           'Authorization': `Bearer ${token}`,
@@ -134,6 +134,10 @@ async function googleQuery(query) {
 // ── SNAPCHAT HELPERS ──────────────────────────────────────────
 let snapTokenCache = null;
 async function getSnapToken() {
+  // If SNAP_REFRESH_TOKEN is actually a JWT access token (starts with eyJ), use it directly
+  if (SNAP_REFRESH_TOKEN && SNAP_REFRESH_TOKEN.startsWith('eyJ')) {
+    return SNAP_REFRESH_TOKEN;
+  }
   if (snapTokenCache && snapTokenCache.expires > Date.now()) return snapTokenCache.token;
   const r = await axios.post('https://accounts.snapchat.com/login/oauth2/access_token',
     new URLSearchParams({
