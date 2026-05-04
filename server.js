@@ -18,7 +18,11 @@ const SNAP_CLIENT_ID       = process.env.SNAP_CLIENT_ID;
 const SNAP_CLIENT_SECRET   = process.env.SNAP_CLIENT_SECRET;
 const SNAP_REFRESH_TOKEN   = process.env.SNAP_REFRESH_TOKEN;
 const SNAP_AD_ACCOUNT_ID   = process.env.SNAP_AD_ACCOUNT_ID;
-const ANTHROPIC_API_KEY    = process.env.ANTHROPIC_API_KEY;  // ← FIXED: moved to top
+const ANTHROPIC_API_KEY    = process.env.ANTHROPIC_API_KEY;
+const SHOPIFY_API_KEY      = process.env.SHOPIFY_API_KEY;
+const SHOPIFY_API_SECRET   = process.env.SHOPIFY_API_SECRET;
+const SHOPIFY_STORE        = process.env.SHOPIFY_STORE || 'reprise-official.myshopify.com';
+let   SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN || null;
 
 const getMetaId = () => (META_AD_ACCOUNT_ID || '').replace('act_', '');
 
@@ -114,7 +118,7 @@ async function googleQuery(query) {
   console.log('Google query — cid:', cid, 'login-cid:', loginCid);
   try {
     const r = await axios.post(
-      `https://googleads.googleapis.com/v18/customers/${cid}/googleAds:search`,
+      `https://googleads.googleapis.com/v19/customers/${cid}/googleAds:search`,
       { query },
       { headers: {
           'Authorization': `Bearer ${token}`,
@@ -474,4 +478,163 @@ app.listen(PORT, () => {
   console.log(`Reprise Ads v6 — Meta + Google + Snapchat + AI Agent on port ${PORT}`);
   scheduleAgent();
   if (ANTHROPIC_API_KEY) { setTimeout(runDailyAgent, 8000); }
+});
+
+// ── SHOPIFY OAUTH ─────────────────────────────────────────────
+app.get('/shopify/callback', async (req, res) => {
+  const { code, shop } = req.query;
+  if (!code) return res.send('No code received');
+  try {
+    const r = await axios.post(`https://${shop || SHOPIFY_STORE}/admin/oauth/access_token`, {
+      client_id: SHOPIFY_API_KEY,
+      client_secret: SHOPIFY_API_SECRET,
+      code,
+    });
+    SHOPIFY_ACCESS_TOKEN = r.data.access_token;
+    console.log('✅ Shopify connected! Token:', SHOPIFY_ACCESS_TOKEN?.slice(0,15)+'...');
+    res.send(`
+      <h2 style="font-family:monospace;background:#020914;color:#00D4FF;padding:30px">
+        ✅ SHOPIFY CONNECTED!<br><br>
+        <span style="font-size:14px;color:#3A7A94">Add this to Render as SHOPIFY_ACCESS_TOKEN:</span><br><br>
+        <textarea rows="2" cols="60" onclick="this.select()" style="background:#040D1A;color:#00FF88;border:1px solid #00D4FF33;padding:10px;font-family:monospace">${SHOPIFY_ACCESS_TOKEN}</textarea><br><br>
+        <span style="font-size:13px;color:#00FF88">Store: ${shop}</span>
+      </h2>
+    `);
+  } catch(e) {
+    res.send(`Error: ${JSON.stringify(e.response?.data || e.message)}`);
+  }
+});
+
+// ── SHOPIFY DATA HELPERS ──────────────────────────────────────
+const shopifyGet = async (path, params = {}) => {
+  if (!SHOPIFY_ACCESS_TOKEN) throw new Error('Shopify not connected');
+  const url = `https://${SHOPIFY_STORE}/admin/api/2024-01/${path}`;
+  const r = await axios.get(url, {
+    headers: { 'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN },
+    params,
+  });
+  return r.data;
+};
+
+const shopifyDateRange = (preset) => {
+  const now = new Date();
+  const fmt = d => d.toISOString();
+  const days = { today: 1, last_7d: 7, last_14d: 14, last_30d: 30, last_60d: 60, last_90d: 90 }[preset] || 30;
+  const from = new Date(now); from.setDate(from.getDate() - days);
+  return { created_at_min: fmt(from), created_at_max: fmt(now) };
+};
+
+// ── SHOPIFY ENDPOINTS ─────────────────────────────────────────
+
+// Overview — orders, revenue, AOV
+app.get('/api/shopify/overview', async (req, res) => {
+  try {
+    const { date_preset = 'last_30d' } = req.query;
+    const dr = shopifyDateRange(date_preset);
+    const [ordersData, abandonedData] = await Promise.all([
+      shopifyGet('orders.json', { status: 'any', limit: 250, ...dr, fields: 'id,total_price,subtotal_price,financial_status,fulfillment_status,created_at,line_items,customer,source_name,cancel_reason,refunds' }),
+      shopifyGet('checkouts.json', { limit: 250, ...dr }),
+    ]);
+    const orders = ordersData.orders || [];
+    const checkouts = abandonedData.checkouts || [];
+    const completedOrders = orders.filter(o => o.financial_status === 'paid' || o.financial_status === 'partially_paid');
+    const refundedOrders = orders.filter(o => o.financial_status === 'refunded' || o.financial_status === 'partially_refunded');
+    const totalRevenue = completedOrders.reduce((a, o) => a + parseFloat(o.total_price || 0), 0);
+    const totalOrders = completedOrders.length;
+    const aov = totalOrders > 0 ? totalRevenue / totalOrders : 0;
+    const totalRefunds = refundedOrders.reduce((a, o) => a + parseFloat(o.total_price || 0), 0);
+    const refundRate = totalOrders > 0 ? (refundedOrders.length / totalOrders * 100) : 0;
+    const abandonedCount = checkouts.filter(c => !c.completed_at).length;
+    const abandondedValue = checkouts.filter(c => !c.completed_at).reduce((a, c) => a + parseFloat(c.total_price || 0), 0);
+    // Source breakdown
+    const sourceMap = {};
+    completedOrders.forEach(o => {
+      const src = o.source_name || 'unknown';
+      if (!sourceMap[src]) sourceMap[src] = { orders: 0, revenue: 0 };
+      sourceMap[src].orders++;
+      sourceMap[src].revenue += parseFloat(o.total_price || 0);
+    });
+    res.json({
+      totalRevenue: totalRevenue.toFixed(2),
+      totalOrders,
+      aov: aov.toFixed(2),
+      totalRefunds: totalRefunds.toFixed(2),
+      refundRate: refundRate.toFixed(1),
+      abandonedCarts: abandonedCount,
+      abandonedValue: abandondedValue.toFixed(2),
+      conversionRate: checkouts.length > 0 ? ((completedOrders.length / checkouts.length) * 100).toFixed(1) : '0',
+      sourceBreakdown: sourceMap,
+    });
+  } catch(e) { console.error('Shopify overview:', e.message); res.status(500).json({ error: e.message }); }
+});
+
+// Funnel — sessions, ATC, checkout, purchase
+app.get('/api/shopify/funnel', async (req, res) => {
+  try {
+    const { date_preset = 'last_30d' } = req.query;
+    const dr = shopifyDateRange(date_preset);
+    const [checkoutsData, ordersData] = await Promise.all([
+      shopifyGet('checkouts.json', { limit: 250, ...dr }),
+      shopifyGet('orders.json', { status: 'any', financial_status: 'paid', limit: 250, ...dr, fields: 'id,total_price,created_at' }),
+    ]);
+    const checkouts = checkoutsData.checkouts || [];
+    const orders = ordersData.orders || [];
+    const totalCheckouts = checkouts.length;
+    const completedCheckouts = orders.length;
+    const abandonedCheckouts = checkouts.filter(c => !c.completed_at).length;
+    res.json({
+      checkoutsInitiated: totalCheckouts,
+      checkoutsCompleted: completedCheckouts,
+      checkoutsAbandoned: abandonedCheckouts,
+      checkoutConvRate: totalCheckouts > 0 ? ((completedCheckouts / totalCheckouts) * 100).toFixed(1) : '0',
+      abandonRate: totalCheckouts > 0 ? ((abandonedCheckouts / totalCheckouts) * 100).toFixed(1) : '0',
+    });
+  } catch(e) { console.error('Shopify funnel:', e.message); res.status(500).json({ error: e.message }); }
+});
+
+// Top products
+app.get('/api/shopify/products', async (req, res) => {
+  try {
+    const { date_preset = 'last_30d' } = req.query;
+    const dr = shopifyDateRange(date_preset);
+    const data = await shopifyGet('orders.json', { status: 'any', financial_status: 'paid', limit: 250, ...dr, fields: 'id,line_items,total_price' });
+    const orders = data.orders || [];
+    const productMap = {};
+    orders.forEach(o => {
+      (o.line_items || []).forEach(item => {
+        const key = item.product_id;
+        if (!productMap[key]) productMap[key] = { name: item.title, qty: 0, revenue: 0, variants: {} };
+        productMap[key].qty += item.quantity;
+        productMap[key].revenue += parseFloat(item.price) * item.quantity;
+        const vkey = item.variant_title || 'Default';
+        productMap[key].variants[vkey] = (productMap[key].variants[vkey] || 0) + item.quantity;
+      });
+    });
+    const sorted = Object.values(productMap).sort((a, b) => b.revenue - a.revenue).slice(0, 20);
+    res.json({ products: sorted });
+  } catch(e) { console.error('Shopify products:', e.message); res.status(500).json({ error: e.message }); }
+});
+
+// Daily revenue trend
+app.get('/api/shopify/daily', async (req, res) => {
+  try {
+    const { date_preset = 'last_30d' } = req.query;
+    const dr = shopifyDateRange(date_preset);
+    const data = await shopifyGet('orders.json', { status: 'any', financial_status: 'paid', limit: 250, ...dr, fields: 'id,total_price,created_at' });
+    const orders = data.orders || [];
+    const dailyMap = {};
+    orders.forEach(o => {
+      const day = o.created_at?.slice(0, 10);
+      if (!dailyMap[day]) dailyMap[day] = { date: day, orders: 0, revenue: 0 };
+      dailyMap[day].orders++;
+      dailyMap[day].revenue += parseFloat(o.total_price || 0);
+    });
+    const daily = Object.values(dailyMap).sort((a, b) => a.date.localeCompare(b.date));
+    res.json({ daily });
+  } catch(e) { console.error('Shopify daily:', e.message); res.status(500).json({ error: e.message }); }
+});
+
+// Status check
+app.get('/api/shopify/status', (req, res) => {
+  res.json({ connected: !!SHOPIFY_ACCESS_TOKEN, store: SHOPIFY_STORE });
 });
