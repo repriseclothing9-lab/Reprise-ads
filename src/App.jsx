@@ -671,7 +671,7 @@ export default function App(){
   };
 
   const fetchAll=async(preset,since,until)=>{
-    await Promise.all([fetchMeta(preset,since,until),fetchGoogle(preset,since,until),fetchSnap(preset,since,until)]);
+    await Promise.all([fetchMeta(preset,since,until),fetchGoogle(preset,since,until),fetchSnap(preset,since,until),fetchShopify(preset)]);
     setLastUpdated(new Date());
   };
 
@@ -732,7 +732,7 @@ export default function App(){
     }catch(e){console.log('Shopify:',e);}finally{setLoadingShopify(false);}
   };
 
-  useEffect(()=>{fetchShopify(datePreset);},[]);
+  useEffect(()=>{fetchShopify(datePreset);},[datePreset]);
 
   const TABS=[{id:"overview",label:"OVERVIEW"},{id:"shopify",label:"🛍 SHOPIFY"},{id:"campaigns",label:`CAMPAIGNS [${allCampaigns.length}]`},{id:"intel",label:"INTEL"},{id:"agent",label:"⚡ AGENT"}];
   const trendData=Array.from({length:14},(_,i)=>({day:`D${i+1}`,meta:Math.round(metaSpend/14*(0.6+Math.random()*.8)),google:Math.round(googleSpend/14*(0.6+Math.random()*.8)),snap:Math.round(snapSpend/14*(0.6+Math.random()*.8))}));
