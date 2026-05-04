@@ -707,7 +707,34 @@ export default function App(){
 
   const allRoas=[...metaInsights.filter(i=>i.roas).map(i=>({...i,platform:"meta"})),...googleCampaigns.filter(i=>i.roas).map(i=>({...i,platform:"google"})),...snapCampaigns.filter(i=>i.roas).map(i=>({...i,platform:"snapchat"}))].sort((a,b)=>parseFloat(b.roas)-parseFloat(a.roas));
 
-  const TABS=[{id:"overview",label:"OVERVIEW"},{id:"campaigns",label:`CAMPAIGNS [${allCampaigns.length}]`},{id:"intel",label:"INTEL"},{id:"agent",label:"⚡ AGENT"}];
+  // ── SHOPIFY STATE ──
+  const[shopifyOverview,setShopifyOverview]=useState(null);
+  const[shopifyFunnel,setShopifyFunnel]=useState(null);
+  const[shopifyProducts,setShopifyProducts]=useState([]);
+  const[shopifyDaily,setShopifyDaily]=useState([]);
+  const[loadingShopify,setLoadingShopify]=useState(true);
+
+  const fetchShopify=async(preset)=>{
+    setLoadingShopify(true);
+    try{
+      const p=`date_preset=${preset||'last_30d'}`;
+      const[ov,fn,pr,dy]=await Promise.all([
+        fetch(`${API_URL}/api/shopify/overview?${p}`),
+        fetch(`${API_URL}/api/shopify/funnel?${p}`),
+        fetch(`${API_URL}/api/shopify/products?${p}`),
+        fetch(`${API_URL}/api/shopify/daily?${p}`),
+      ]);
+      const[ovd,fnd,prd,dyd]=await Promise.all([ov.json(),fn.json(),pr.json(),dy.json()]);
+      if(!ovd.error)setShopifyOverview(ovd);
+      if(!fnd.error)setShopifyFunnel(fnd);
+      if(prd.products)setShopifyProducts(prd.products);
+      if(dyd.daily)setShopifyDaily(dyd.daily);
+    }catch(e){console.log('Shopify:',e);}finally{setLoadingShopify(false);}
+  };
+
+  useEffect(()=>{fetchShopify(datePreset);},[]);
+
+  const TABS=[{id:"overview",label:"OVERVIEW"},{id:"shopify",label:"🛍 SHOPIFY"},{id:"campaigns",label:`CAMPAIGNS [${allCampaigns.length}]`},{id:"intel",label:"INTEL"},{id:"agent",label:"⚡ AGENT"}];
   const trendData=Array.from({length:14},(_,i)=>({day:`D${i+1}`,meta:Math.round(metaSpend/14*(0.6+Math.random()*.8)),google:Math.round(googleSpend/14*(0.6+Math.random()*.8)),snap:Math.round(snapSpend/14*(0.6+Math.random()*.8))}));
 
   const[agentReport,setAgentReport]=useState(null);
@@ -862,6 +889,97 @@ export default function App(){
             </JCard>
           </div>
         </>}
+
+
+        {tab==="shopify"&&<div style={{display:"flex",flexDirection:"column",gap:14}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:8}}>
+            {[
+              ["REVENUE",shopifyOverview?fmt(parseFloat(shopifyOverview.totalRevenue)):"—","#00FF88"],
+              ["ORDERS",shopifyOverview?.totalOrders||"—",J.cyan],
+              ["AOV",shopifyOverview?fmt(parseFloat(shopifyOverview.aov)):"—",J.purple],
+              ["ABANDONED CARTS",shopifyOverview?shopifyOverview.abandonedCarts:"—",J.red],
+              ["ABANDONED VALUE",shopifyOverview?fmt(parseFloat(shopifyOverview.abandonedValue)):"—",J.red],
+              ["CONV RATE",shopifyOverview?`${shopifyOverview.conversionRate}%`:"—",parseFloat(shopifyOverview?.conversionRate||0)>=40?J.green:J.yellow],
+            ].map(([l,v,c])=>(
+              <JCard key={l} style={{padding:"10px 12px"}} glow accent={c}>
+                <div style={{fontSize:7,color:J.muted,letterSpacing:1.5,fontFamily:"monospace",marginBottom:4}}>◈ {l}</div>
+                <div style={{fontSize:16,fontWeight:900,color:c,fontFamily:"'Orbitron',monospace"}}>{v}</div>
+              </JCard>
+            ))}
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+            <JCard style={{padding:18}} glow accent="#00FF88">
+              <div style={{fontSize:9,color:"#00FF88",letterSpacing:2,fontFamily:"monospace",marginBottom:16}}>◈ CHECKOUT FUNNEL (30D)</div>
+              {loadingShopify?<div style={{color:J.muted,fontFamily:"monospace",fontSize:10,textAlign:"center",padding:20}}>LOADING...</div>:
+              <div>
+                {[
+                  ["CHECKOUTS INITIATED",shopifyFunnel?.checkoutsInitiated||0,100,J.cyan],
+                  ["COMPLETED",shopifyFunnel?.checkoutsCompleted||0,parseFloat(shopifyFunnel?.checkoutConvRate||0),J.green],
+                  ["ABANDONED",shopifyFunnel?.checkoutsAbandoned||0,parseFloat(shopifyFunnel?.abandonRate||0),J.red],
+                ].map(([l,v,pct,c])=>(
+                  <div key={l} style={{marginBottom:14}}>
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}>
+                      <span style={{fontSize:9,color:J.muted,fontFamily:"monospace"}}>{l}</span>
+                      <span style={{fontSize:11,fontWeight:700,color:c,fontFamily:"monospace"}}>{v} <span style={{fontSize:8,opacity:0.7}}>({pct.toFixed(1)}%)</span></span>
+                    </div>
+                    <div style={{height:4,background:J.border,borderRadius:2}}>
+                      <div style={{width:`${Math.min(pct,100)}%`,height:"100%",background:c,borderRadius:2,boxShadow:`0 0 6px ${c}66`,transition:"width 1s ease"}}/>
+                    </div>
+                  </div>
+                ))}
+              </div>}
+            </JCard>
+            <JCard style={{padding:18}} glow accent={J.red}>
+              <div style={{fontSize:9,color:J.red,letterSpacing:2,fontFamily:"monospace",marginBottom:4}}>◈ ABANDONED CART ALERT 🚨</div>
+              <div style={{fontSize:9,color:J.muted,fontFamily:"monospace",marginBottom:16}}>Revenue waiting to be recovered</div>
+              <div style={{textAlign:"center",padding:"16px 0"}}>
+                <div style={{fontSize:38,fontWeight:900,color:J.red,fontFamily:"'Orbitron',monospace",textShadow:`0 0 20px ${J.red}66`}}>
+                  {shopifyOverview?fmt(parseFloat(shopifyOverview.abandonedValue)):"—"}
+                </div>
+                <div style={{fontSize:10,color:J.muted,fontFamily:"monospace",marginTop:8}}>{shopifyOverview?.abandonedCarts||0} carts abandoned</div>
+              </div>
+              <div style={{padding:"10px 12px",background:J.red+"0A",border:`1px solid ${J.red}22`,borderRadius:3}}>
+                <div style={{fontSize:9,color:J.red,fontFamily:"monospace",fontWeight:700,marginBottom:4}}>⚡ RECOVERY ACTION</div>
+                <div style={{fontSize:9,color:"#7AB8CC",fontFamily:"monospace",lineHeight:1.8}}>
+                  Set up WhatsApp abandoned cart recovery via GoKwik.<br/>
+                  10% recovery = {shopifyOverview?fmt(parseFloat(shopifyOverview.abandonedValue)*0.1):"₹XX"} additional revenue.
+                </div>
+              </div>
+            </JCard>
+          </div>
+          {shopifyDaily.length>0&&<JCard style={{padding:18}} glow>
+            <div style={{fontSize:9,color:J.cyan,letterSpacing:2,fontFamily:"monospace",marginBottom:14}}>◈ DAILY REVENUE TREND</div>
+            <ResponsiveContainer width="100%" height={160}>
+              <AreaChart data={shopifyDaily.map(d=>({date:d.date?.slice(5),revenue:parseFloat(d.revenue||0),orders:d.orders}))}>
+                <defs><linearGradient id="shopGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#00FF88" stopOpacity={0.3}/><stop offset="95%" stopColor="#00FF88" stopOpacity={0}/></linearGradient></defs>
+                <CartesianGrid strokeDasharray="3 3" stroke={J.grid}/>
+                <XAxis dataKey="date" tick={{fontSize:7,fill:J.muted,fontFamily:"monospace"}}/><YAxis tick={{fontSize:7,fill:J.muted,fontFamily:"monospace"}}/>
+                <Tooltip contentStyle={{background:J.bg2,border:`1px solid ${J.borderBright}`,borderRadius:3,fontSize:10,fontFamily:"monospace"}} formatter={v=>[fmt(v)]}/>
+                <Area type="monotone" dataKey="revenue" stroke="#00FF88" fill="url(#shopGrad)" strokeWidth={2} dot={false} name="Revenue"/>
+              </AreaChart>
+            </ResponsiveContainer>
+          </JCard>}
+          {shopifyProducts.length>0&&<JCard style={{overflow:"hidden"}} glow>
+            <div style={{padding:"12px 16px",borderBottom:`1px solid ${J.border}`}}>
+              <div style={{fontSize:9,color:J.cyan,letterSpacing:2,fontFamily:"monospace"}}>◈ TOP PRODUCTS BY REVENUE</div>
+            </div>
+            <table style={{width:"100%",borderCollapse:"collapse"}}>
+              <thead><tr style={{background:J.cyan+"04",borderBottom:`1px solid ${J.border}`}}>
+                {["PRODUCT","QTY SOLD","REVENUE","AVG PRICE"].map(h=><th key={h} style={{padding:"8px 12px",fontSize:7,color:J.muted,textAlign:h==="PRODUCT"?"left":"center",fontFamily:"monospace",letterSpacing:2}}>{h}</th>)}
+              </tr></thead>
+              <tbody>
+                {shopifyProducts.slice(0,10).map((p,i)=>(
+                  <tr key={i} className="trow" style={{borderBottom:`1px solid ${J.border}`}}>
+                    <td style={{padding:"9px 12px",fontSize:11,fontWeight:700,color:J.text,fontFamily:"monospace",maxWidth:280,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name}</td>
+                    <td style={{padding:"9px 12px",textAlign:"center",fontSize:10,color:J.cyan,fontFamily:"monospace",fontWeight:700}}>{p.qty}</td>
+                    <td style={{padding:"9px 12px",textAlign:"center",fontSize:11,fontWeight:700,color:"#00FF88",fontFamily:"monospace"}}>{fmt(p.revenue)}</td>
+                    <td style={{padding:"9px 12px",textAlign:"center",fontSize:10,color:J.muted,fontFamily:"monospace"}}>{fmt(p.qty>0?p.revenue/p.qty:0)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </JCard>}
+        </div>}
 
         {tab==="campaigns"&&<JCard style={{overflow:"hidden"}} glow>
           <div style={{padding:"12px 18px",borderBottom:`1px solid ${J.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
