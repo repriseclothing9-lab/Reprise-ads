@@ -24,7 +24,11 @@ const SHOPIFY_API_SECRET   = process.env.SHOPIFY_API_SECRET;
 const SHOPIFY_STORE        = process.env.SHOPIFY_STORE || 'reprise-official.myshopify.com';
 let   SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN || null;
 
+const META_AD_ACCOUNT_ID_2 = process.env.META_AD_ACCOUNT_ID_2 || '4284274201820662';
+
 const getMetaId = () => (META_AD_ACCOUNT_ID || '').replace('act_', '');
+const getMetaId2 = () => (META_AD_ACCOUNT_ID_2 || '').replace('act_', '');
+const META_ACCOUNT_IDS = [getMetaId, getMetaId2].filter(fn => fn());
 
 app.get('/ping', (req, res) => res.send('OK'));
 
@@ -196,25 +200,31 @@ function snapDateRange(preset, since, until) {
 // ── META ENDPOINTS ────────────────────────────────────────────
 app.get('/api/campaigns', async (req, res) => {
   try {
-    const r = await axios.get(`https://graph.facebook.com/v19.0/act_${getMetaId()}/campaigns`, {
-      params: { access_token: META_ACCESS_TOKEN, fields: 'id,name,status,daily_budget,lifetime_budget,objective,start_time,stop_time,created_time,updated_time,budget_remaining,buying_type', limit: 100 }
-    });
-    res.json(r.data);
+    const fields = 'id,name,status,daily_budget,lifetime_budget,objective,start_time,stop_time,created_time,updated_time,budget_remaining,buying_type';
+    const [r1, r2] = await Promise.allSettled([
+      axios.get(`https://graph.facebook.com/v19.0/act_${getMetaId()}/campaigns`, { params: { access_token: META_ACCESS_TOKEN, fields, limit: 100 } }),
+      getMetaId2() ? axios.get(`https://graph.facebook.com/v19.0/act_${getMetaId2()}/campaigns`, { params: { access_token: META_ACCESS_TOKEN, fields, limit: 100 } }) : Promise.resolve({ data: { data: [] } }),
+    ]);
+    const data1 = r1.status === 'fulfilled' ? (r1.value.data.data || []) : [];
+    const data2 = r2.status === 'fulfilled' ? (r2.value.data?.data || []) : [];
+    res.json({ data: [...data1, ...data2] });
   } catch (e) { res.status(500).json({ error: e.response?.data?.error?.message || e.message }); }
 });
 
 app.get('/api/insights', async (req, res) => {
   try {
     const { date_preset, date_since, date_until } = req.query;
-    const params = {
-      access_token: META_ACCESS_TOKEN,
-      fields: 'campaign_id,campaign_name,spend,impressions,clicks,ctr,cpc,cpm,reach,frequency,actions,action_values,purchase_roas,outbound_clicks',
-      level: 'campaign', limit: 100,
+    const buildParams = (acct) => {
+      const p = {
+        access_token: META_ACCESS_TOKEN,
+        fields: 'campaign_id,campaign_name,spend,impressions,clicks,ctr,cpc,cpm,reach,frequency,actions,action_values,purchase_roas,outbound_clicks',
+        level: 'campaign', limit: 100,
+      };
+      if (date_since && date_until) p.time_range = JSON.stringify({ since: date_since, until: date_until });
+      else p.date_preset = date_preset && date_preset !== 'custom' ? date_preset : 'last_30d';
+      return p;
     };
-    if (date_since && date_until) params.time_range = JSON.stringify({ since: date_since, until: date_until });
-    else params.date_preset = date_preset && date_preset !== 'custom' ? date_preset : 'last_30d';
-    const r = await axios.get(`https://graph.facebook.com/v19.0/act_${getMetaId()}/insights`, { params });
-    const data = (r.data.data || []).map(row => {
+    const enrichRow = row => {
       const spend = parseFloat(row.spend || 0);
       const nr = row.purchase_roas?.[0]?.value ? parseFloat(row.purchase_roas[0].value) : null;
       const pv = (row.action_values || []).find(a => a.action_type === 'purchase')?.value;
@@ -222,8 +232,14 @@ app.get('/api/insights', async (req, res) => {
       const roas = nr || (pv && spend > 0 ? parseFloat(pv) / spend : null) || (ov && spend > 0 ? parseFloat(ov) / spend : null);
       const revenue = pv ? parseFloat(pv) : ov ? parseFloat(ov) : nr && spend > 0 ? nr * spend : null;
       return { ...row, roas, revenue };
-    });
-    res.json({ ...r.data, data });
+    };
+    const [r1, r2] = await Promise.allSettled([
+      axios.get(`https://graph.facebook.com/v19.0/act_${getMetaId()}/insights`, { params: buildParams(getMetaId()) }),
+      getMetaId2() ? axios.get(`https://graph.facebook.com/v19.0/act_${getMetaId2()}/insights`, { params: buildParams(getMetaId2()) }) : Promise.resolve({ data: { data: [] } }),
+    ]);
+    const data1 = r1.status === 'fulfilled' ? (r1.value.data.data || []).map(enrichRow) : [];
+    const data2 = r2.status === 'fulfilled' ? (r2.value.data?.data || []).map(enrichRow) : [];
+    res.json({ data: [...data1, ...data2] });
   } catch (e) { res.status(500).json({ error: e.response?.data?.error?.message || e.message }); }
 });
 
