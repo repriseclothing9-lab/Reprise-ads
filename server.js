@@ -186,9 +186,11 @@ function snapDateRange(preset, since, until) {
   const today = new Date();
   const fmt = d => d.toISOString().slice(0, 10);
   if (since && until) return { start_time: since, end_time: until };
-  const days = { today: 0, last_7d: 7, last_14d: 14, last_30d: 30, last_60d: 60, last_90d: 90 }[preset] ?? 30;
+  // Snapchat requires start != end, minimum 1 day range
+  const days = { today: 1, last_7d: 7, last_14d: 14, last_30d: 30, last_60d: 60, last_90d: 90 }[preset] ?? 30;
   const from = new Date(today); from.setDate(from.getDate() - Math.max(days, 1));
-  return { start_time: fmt(from), end_time: fmt(today) };
+  const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+  return { start_time: fmt(from), end_time: fmt(tomorrow) };
 }
 
 // ── META ENDPOINTS ────────────────────────────────────────────
