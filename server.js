@@ -369,28 +369,52 @@ app.get('/api/snapchat/insights', async (req, res) => {
     const { date_preset, date_since, date_until } = req.query;
     const token = await getSnapToken();
     const dr = snapDateRange(date_preset, date_since, date_until);
-    const r = await axios.get(
-      `https://adsapi.snapchat.com/v1/adaccounts/${SNAP_AD_ACCOUNT_ID}/stats`,
-      {
-        headers: { Authorization: `Bearer ${token}` },
-        params: {
-          granularity: 'TOTAL', fields: 'impressions,swipes,spend,video_views,conversion_purchases,conversion_purchases_value',
-          start_time: dr.start_time, end_time: dr.end_time,
-        }
-      }
+
+    // AdAccount level only supports 'spend' — fetch campaign level for full metrics
+    const campRes = await axios.get(
+      `https://adsapi.snapchat.com/v1/adaccounts/${SNAP_AD_ACCOUNT_ID}/campaigns`,
+      { headers: { Authorization: `Bearer ${token}` } }
     );
-    const s = r.data.total_stats?.[0]?.total_stat?.stats || {};
-    const spend = (s.spend || 0) / 1e6;
-    const revenue = s.conversion_purchases_value || 0;
-    const clicks = s.swipes || 0;
-    const impressions = s.impressions || 0;
+    const campaigns = (campRes.data.campaigns || []).map(c => c.campaign);
+
+    // Fetch stats for each active campaign
+    let totalSpend = 0, totalImpressions = 0, totalClicks = 0, totalRevenue = 0, totalConversions = 0;
+
+    await Promise.all(campaigns.map(async (camp) => {
+      try {
+        const r = await axios.get(
+          `https://adsapi.snapchat.com/v1/campaigns/${camp.id}/stats`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+            params: {
+              granularity: 'TOTAL',
+              fields: 'impressions,swipes,spend,conversion_purchases,conversion_purchases_value',
+              start_time: dr.start_time,
+              end_time: dr.end_time,
+            }
+          }
+        );
+        const s = r.data.total_stats?.[0]?.total_stat?.stats || {};
+        totalSpend += (s.spend || 0) / 1e6;
+        totalImpressions += s.impressions || 0;
+        totalClicks += s.swipes || 0;
+        totalRevenue += s.conversion_purchases_value || 0;
+        totalConversions += s.conversion_purchases || 0;
+      } catch(e) {
+        // skip individual campaign errors
+      }
+    }));
+
     res.json({ data: {
-      spend, revenue, impressions, clicks,
-      ctr: impressions > 0 ? clicks / impressions * 100 : 0,
-      cpc: clicks > 0 ? spend / clicks : 0,
-      cpm: impressions > 0 ? spend / impressions * 1000 : 0,
-      conversions: s.conversion_purchases || 0,
-      roas: revenue > 0 && spend > 0 ? revenue / spend : null,
+      spend: totalSpend,
+      revenue: totalRevenue,
+      impressions: totalImpressions,
+      clicks: totalClicks,
+      ctr: totalImpressions > 0 ? totalClicks / totalImpressions * 100 : 0,
+      cpc: totalClicks > 0 ? totalSpend / totalClicks : 0,
+      cpm: totalImpressions > 0 ? totalSpend / totalImpressions * 1000 : 0,
+      conversions: totalConversions,
+      roas: totalRevenue > 0 && totalSpend > 0 ? totalRevenue / totalSpend : null,
     }});
   } catch (e) { console.error('Snap insights:', e.response?.data || e.message); res.status(500).json({ error: e.message, data: null }); }
 });
