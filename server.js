@@ -137,22 +137,51 @@ async function googleQuery(query) {
 
 // ── SNAPCHAT HELPERS ──────────────────────────────────────────
 let snapTokenCache = null;
+let currentSnapRefreshToken = SNAP_REFRESH_TOKEN;
+
 async function getSnapToken() {
-  // If SNAP_REFRESH_TOKEN is actually a JWT access token (starts with eyJ), use it directly
-  if (SNAP_REFRESH_TOKEN && SNAP_REFRESH_TOKEN.startsWith('eyJ')) {
-    return SNAP_REFRESH_TOKEN;
+  // Return cached token if still valid
+  if (snapTokenCache && snapTokenCache.expires > Date.now()) {
+    return snapTokenCache.token;
   }
-  if (snapTokenCache && snapTokenCache.expires > Date.now()) return snapTokenCache.token;
-  const r = await axios.post('https://accounts.snapchat.com/login/oauth2/access_token',
-    new URLSearchParams({
-      client_id: SNAP_CLIENT_ID, client_secret: SNAP_CLIENT_SECRET,
-      refresh_token: SNAP_REFRESH_TOKEN, grant_type: 'refresh_token',
-    }),
-    { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
-  );
-  snapTokenCache = { token: r.data.access_token, expires: Date.now() + (r.data.expires_in - 60) * 1000 };
-  return snapTokenCache.token;
+  if (!currentSnapRefreshToken) throw new Error('No Snapchat refresh token');
+  try {
+    const r = await axios.post('https://accounts.snapchat.com/login/oauth2/access_token',
+      new URLSearchParams({
+        client_id: SNAP_CLIENT_ID,
+        client_secret: SNAP_CLIENT_SECRET,
+        refresh_token: currentSnapRefreshToken,
+        grant_type: 'refresh_token',
+      }),
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+    );
+    snapTokenCache = {
+      token: r.data.access_token,
+      expires: Date.now() + ((r.data.expires_in || 3600) - 120) * 1000
+    };
+    // Snapchat sometimes returns a new refresh token — store it
+    if (r.data.refresh_token) {
+      currentSnapRefreshToken = r.data.refresh_token;
+      console.log('✅ Snapchat token refreshed — new refresh token stored in memory');
+    }
+    return snapTokenCache.token;
+  } catch(e) {
+    snapTokenCache = null;
+    console.error('Snapchat refresh failed:', e.response?.data || e.message);
+    throw e;
+  }
 }
+
+// ── AUTO-REFRESH every 45 min so token never expires ──────────
+setInterval(async () => {
+  try {
+    snapTokenCache = null;
+    await getSnapToken();
+    console.log('🔄 Snapchat token proactively refreshed');
+  } catch(e) {
+    console.error('Snapchat auto-refresh error:', e.message);
+  }
+}, 45 * 60 * 1000);
 function snapDateRange(preset, since, until) {
   const today = new Date();
   const fmt = d => d.toISOString().slice(0, 10);
